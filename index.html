@@ -1,0 +1,770 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>รายงานค่าคอม/ค่ามือ — Relise Clinic</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "Sukhumvit Set", "Thonburi", sans-serif;
+    margin: 0; background: #f4f5f7; color: #1a1a2e;
+  }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 20px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .sub { color: #666; font-size: 13px; margin-bottom: 16px; }
+
+  .card {
+    background: #fff; border-radius: 12px; padding: 16px 20px;
+    box-shadow: 0 1px 4px rgba(0,0,0,.08); margin-bottom: 16px;
+  }
+  label { font-size: 13px; color: #555; display: block; margin-bottom: 4px; }
+  input, select {
+    padding: 9px 11px; border: 1px solid #ccc; border-radius: 8px;
+    font-size: 14px; font-family: inherit; width: 100%; background: #fff;
+  }
+  input[type=date] { width: auto; }
+  .row { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-end; }
+  .row > div { min-width: 0; }
+  button {
+    padding: 9px 16px; border: 0; border-radius: 8px; font-size: 14px;
+    font-family: inherit; cursor: pointer; background: #e3e6ea; white-space: nowrap;
+  }
+  button.primary { background: #2563eb; color: #fff; font-weight: 600; }
+  button.ghost { background: transparent; color: #2563eb; }
+  button.danger { background: transparent; color: #c0392b; }
+  #loginStatus, #status { font-size: 13px; margin-top: 10px; min-height: 18px; color: #666; }
+  .err { color: #c0392b !important; }
+
+  /* login */
+  #loginView { max-width: 380px; margin: 8vh auto 0; padding: 0 16px; }
+  #loginView .card { padding: 26px; }
+  #loginView h1 { text-align: center; margin-bottom: 18px; }
+  #loginView .field { margin-bottom: 14px; }
+  #loginView button.primary { width: 100%; margin-top: 6px; }
+
+  .userbar {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 12px; flex-wrap: wrap; gap: 8px;
+  }
+  .userbar .who { font-size: 15px; }
+  .userbar .who b { font-size: 17px; }
+  .rolechip {
+    display: inline-block; background: #e0eaff; color: #2563eb;
+    font-size: 11.5px; border-radius: 20px; padding: 2px 9px; margin-left: 4px;
+  }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  th, td { padding: 7px 9px; border-bottom: 1px solid #eee; text-align: left; }
+  th { background: #f0f2f5; font-weight: 600; white-space: nowrap; }
+  td.num, th.num { text-align: right; white-space: nowrap; }
+  tr.total td { font-weight: 700; background: #f8fafc; border-top: 2px solid #ddd; }
+  .daybar td { background: #eef4ff; font-weight: 600; }
+  .dep { color: #b45309; }
+  .warn { color: #c0392b; font-size: 12px; }
+  .note { color: #666; font-size: 12.5px; margin-top: 8px; }
+
+  .bignum { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 4px; }
+  .bignum .box {
+    flex: 1; min-width: 130px; background: #f0f6ff; border-radius: 10px;
+    padding: 12px 16px; text-align: center;
+  }
+  .bignum .box .v { font-size: 20px; font-weight: 700; color: #2563eb; }
+  .bignum .box .l { font-size: 12px; color: #666; margin-top: 2px; }
+
+  .report-title { display: none; }
+
+  @media print {
+    body { background: #fff; }
+    .no-print { display: none !important; }
+    .card { box-shadow: none; padding: 0; }
+    .wrap { max-width: 100%; padding: 0; }
+    .report-title { display: block; margin-bottom: 10px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ===== หน้า LOGIN ===== -->
+<div id="loginView">
+  <div class="card">
+    <h1>🔐 รายงานค่าคอม/ค่ามือ</h1>
+    <div class="field">
+      <label>User</label>
+      <input id="loginUser" autocomplete="username">
+    </div>
+    <div class="field">
+      <label>Password</label>
+      <input id="loginPass" type="password" autocomplete="current-password"
+             onkeydown="if(event.key==='Enter')login()">
+    </div>
+    <button class="primary" onclick="login()">เข้าสู่ระบบ</button>
+    <div id="loginStatus"></div>
+  </div>
+</div>
+
+<!-- ===== หน้า REPORT ===== -->
+<div id="reportView" class="wrap" style="display:none">
+
+  <div class="no-print">
+    <div class="userbar">
+      <div class="who">สวัสดี <b id="whoName"></b> <span id="whoCode" style="color:#666"></span><span id="whoRoles"></span></div>
+      <button class="danger" onclick="logout()">ออกจากระบบ</button>
+    </div>
+
+    <div class="card">
+      <div class="row">
+        <div style="flex:1; min-width:180px">
+          <label>รายงาน</label>
+          <select id="reportSel"></select>
+        </div>
+        <div id="empPickWrap" style="flex:1; min-width:180px; display:none">
+          <label>พนักงาน (Emp code — เลือกหรือพิมพ์เอง)</label>
+          <input id="empPick" list="empList" placeholder="เช่น 68015">
+          <datalist id="empList"></datalist>
+        </div>
+      </div>
+      <div class="row" style="margin-top:12px">
+        <div><label>เริ่ม</label><input type="date" id="start"></div>
+        <div><label>สิ้นสุด</label><input type="date" id="end"></div>
+        <button class="ghost" onclick="setMonth(0)">เดือนนี้</button>
+        <button class="ghost" onclick="setMonth(-1)">เดือนที่แล้ว</button>
+        <button class="primary" onclick="run()">แสดงรายงาน</button>
+        <button onclick="window.print()">🖨 พิมพ์ / Save PDF</button>
+      </div>
+      <div id="status"></div>
+    </div>
+  </div>
+
+  <div class="report-title">
+    <h1 id="printTitle"></h1>
+    <div class="sub" id="printRange"></div>
+  </div>
+
+  <div id="result"></div>
+</div>
+
+<script>
+/* ====== CONFIG ====== */
+const TOKEN    = 'patDtk7rWm8XkPgWG.613e0a5094a47df76550d554a76c7ba2ee55b5a969d591c0e6a9153a436a7c90'; // จากตาราง Secret ID 1 (read-only)
+const BASE_ID  = 'app9HE5sWgmsg5OXN';        // ระบบบัญชี
+
+/* ตาราง Liff test (ผู้ใช้) */
+const USER_TABLE = 'Liff test';
+const U_USER = 'User';
+const U_PASS = 'Password';
+const U_NAME = 'พนักงาน';
+const U_CODE = 'Emp Code';
+const U_ROLE = 'สิทธิ์';
+
+/* ตาราง ค่ามือค่าคอม */
+const BEN_TABLE = 'tblspyZMIqfYgL7kh';
+const F_BILLNO  = 'Billing No';
+const F_DATE    = 'วันที่ (from Billing)';
+const F_SALES   = 'ยอดขาย';
+const F_STATUS  = 'Billing Status';
+const F_ADMINS  = 'Admin Commission';
+const F_ADMIN_N = 'Admin(N)';
+const F_DEPOSIT = 'Deposit Used (from Billing)';
+const F_TYPE    = 'Billing Type (from Billing)';
+const F_BT_COM  = 'new com BT';
+const F_BT_WHO  = 'BT (from Billing)';
+const F_DR_COM  = 'Com Dr';
+const F_DR_WHO  = 'DR (from Billing)';
+
+/* ตาราง Billing */
+const BILL_TABLE = 'tblpBtlV2PKgXLxKV';
+const B_DATE   = 'วันที่';
+const B_STATUS = 'Billing Status';
+const B_TYPE   = 'Billing Type';
+const B_FINAL  = 'Final Payable';
+const B_SALECOM= 'ยอดคำนวนค่าคอมเซลล์';
+const B_SALE   = 'Sale';
+const B_PAY    = 'Payment 1';
+
+/* ตาราง Shiff */
+const SHIFF_TABLE = 'Shiff';
+const SH_EMP  = 'Emp code';
+const SH_DATE = 'วันที่';
+const SH_HOUR = 'ค่าชั่วโมง';
+
+/* ประเภทบิลที่ไม่นับยอดขาย (ค่าคอมแชท) */
+const ZERO_SALES_TYPES = ['ใช้คอร์ส'];
+
+/* ช่องทางจ่ายที่นับเข้า "ยอดร้านรวม" (ตามสคริปต์ค่ามือหมอ) */
+const PAY_OK = new Set(['รูดบัตร/ผ่อน (SCB)','ผ่อน 0%','Kbank (บริษัท),BBL บริษัท']);
+
+/* ====== รายงานและสิทธิ์ ====== */
+const REPORTS = {
+  chat:   { name: 'ค่าคอมแชท',            roles: ['Admin'] },
+  pa:     { name: 'ค่าคอมยอดขาย (PA)',    roles: ['PA'] },
+  sale:   { name: 'ค่าคอมยอดขาย (Sale)',  roles: ['Sale'] },
+  bt:     { name: 'ค่ามือ BT',            roles: ['BT'] },
+  doctor: { name: 'ค่ามือหมอ',            roles: [] },   // เฉพาะ Mgn/Dev
+};
+const MANAGER_ROLES = ['Mgn', 'Dev'];
+
+/* ====== เรทค่าคอม ====== */
+/* ค่าคอมแชท: เรทต่อบิล */
+function rateChat(total){
+  if (total >= 40000) return 200;
+  if (total > 20000)  return 100;
+  return 50;
+}
+/* PA: ขั้นบันไดจากยอดรวมทั้งช่วง */
+function paLadder(total){
+  if (total > 2000000) return { label: '5% (2,000,001 ขึ้นไป)',          com: total * 0.05 };
+  if (total > 1600000) return { label: '4% (1,600,001–2,000,000)',       com: total * 0.04 };
+  if (total > 1200000) return { label: '3% (1,200,001–1,600,000)',       com: total * 0.03 };
+  if (total > 800000)  return { label: '2.5% (800,001–1,200,000)',       com: total * 0.025 };
+  if (total > 500000)  return { label: '2% (500,001–800,000)',           com: total * 0.02 };
+  if (total >= 300000) return { label: 'เหมา 2,000 (300,000–500,000)',   com: 2000 };
+  return { label: 'ยังไม่ถึงขั้นต่ำ 300,000', com: 0 };
+}
+const SALE_RATE = 0.02;   // Sale: Final Payable × 2%
+
+/* ====== HELPERS ====== */
+const thBaht = n => (n ?? 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const thDate = s => new Date(s + 'T00:00:00').toLocaleDateString('th-TH',
+                    { day: 'numeric', month: 'short', year: 'numeric' });
+const parseMoney = v => typeof v === 'number' ? v :
+                    (parseFloat(String(v ?? '').replace(/[^\d.\-]/g, '')) || 0);
+
+function extractHN(billNo){
+  const s = (billNo || '').trim();
+  const i = s.indexOf('-');
+  if (i < 0) return s;
+  return s.slice(i + 1).split('/')[0].trim();
+}
+function billPrefix(billNo){
+  return (billNo || '').trim().split('-')[0].trim();
+}
+const parseAdmins = text =>
+  String(text || '').split(/[\n,]+/).map(s => s.trim()).filter(Boolean);
+
+const matchCode = (text, codes) =>
+  codes.some(c => String(text || '').includes(c));
+
+function esc(s){
+  return String(s ?? '').replace(/[&<>"]/g,
+    c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+}
+
+const _cache = {};
+async function api(tableIdOrName, params){
+  const url = `https://api.airtable.com/v0/${BASE_ID}/${encodeURIComponent(tableIdOrName)}?${params}`;
+  const res = await fetch(url, { headers: { Authorization: 'Bearer ' + TOKEN } });
+  if (!res.ok) throw new Error('Airtable error ' + res.status);
+  return res.json();
+}
+async function fetchTable(tableIdOrName, fields, formula){
+  const key = tableIdOrName + '|' + formula;
+  if (_cache[key]) return _cache[key];
+  const fq = fields.map(f => 'fields[]=' + encodeURIComponent(f)).join('&');
+  let records = [], offset = '';
+  do {
+    const data = await api(tableIdOrName,
+      `pageSize=100&${fq}&filterByFormula=${encodeURIComponent(formula)}` +
+      (offset ? `&offset=${offset}` : ''));
+    records.push(...data.records);
+    offset = data.offset || '';
+  } while (offset);
+  _cache[key] = records;
+  return records;
+}
+
+/* ====== LOGIN / SESSION ====== */
+function session(){ try { return JSON.parse(sessionStorage.getItem('relise_user')) || null; } catch(e){ return null; } }
+const isManager = u => (u.roles || []).some(r => MANAGER_ROLES.includes(r));
+function allowedReports(u){
+  const keys = Object.keys(REPORTS);
+  if (isManager(u)) return keys;
+  return keys.filter(k => REPORTS[k].roles.some(r => (u.roles || []).includes(r)));
+}
+
+async function login(){
+  const st = document.getElementById('loginStatus');
+  const user = document.getElementById('loginUser').value.trim().replace(/"/g, '');
+  const pass = document.getElementById('loginPass').value.replace(/"/g, '');
+  if (!user || !pass){ st.className = 'err'; st.textContent = 'กรุณากรอก User และ Password'; return; }
+
+  st.className = ''; st.textContent = 'กำลังตรวจสอบ...';
+  try {
+    const formula = `AND({${U_USER}}="${user}", {${U_PASS}}="${pass}")`;
+    const data = await api(USER_TABLE,
+      'maxRecords=1' +
+      '&fields[]=' + encodeURIComponent(U_NAME) +
+      '&fields[]=' + encodeURIComponent(U_CODE) +
+      '&fields[]=' + encodeURIComponent(U_ROLE) +
+      '&filterByFormula=' + encodeURIComponent(formula));
+
+    if (!data.records.length){
+      st.className = 'err'; st.textContent = '❌ User หรือ Password ไม่ถูกต้อง';
+      return;
+    }
+    const f = data.records[0].fields;
+    const codes = String(f[U_CODE] || '').split(/[\n,\s]+/).map(s => s.trim()).filter(Boolean);
+    const roles = (f[U_ROLE] || []).map(r => String(r).trim());
+    if (!roles.length){
+      st.className = 'err'; st.textContent = '❌ บัญชีนี้ยังไม่ได้กำหนดสิทธิ์ — แจ้งแอดมินระบบ';
+      return;
+    }
+    if (!codes.length && !roles.some(r => MANAGER_ROLES.includes(r))){
+      st.className = 'err'; st.textContent = '❌ บัญชีนี้ยังไม่ได้กำหนด Emp Code — แจ้งแอดมินระบบ';
+      return;
+    }
+    sessionStorage.setItem('relise_user', JSON.stringify({
+      name: f[U_NAME] || user, codes, roles
+    }));
+    showReport();
+  } catch (e){
+    st.className = 'err'; st.textContent = '❌ ' + e.message;
+  }
+}
+
+function logout(){
+  sessionStorage.removeItem('relise_user');
+  document.getElementById('reportView').style.display = 'none';
+  document.getElementById('loginView').style.display = '';
+  document.getElementById('loginPass').value = '';
+  document.getElementById('result').innerHTML = '';
+}
+
+async function showReport(){
+  const u = session();
+  if (!u) return;
+  document.getElementById('loginView').style.display = 'none';
+  document.getElementById('reportView').style.display = '';
+  document.getElementById('whoName').textContent = u.name;
+  document.getElementById('whoCode').textContent = u.codes.length ? '(' + u.codes.join(', ') + ')' : '';
+  document.getElementById('whoRoles').innerHTML =
+    (u.roles || []).map(r => `<span class="rolechip">${esc(r)}</span>`).join('');
+
+  const sel = document.getElementById('reportSel');
+  sel.innerHTML = allowedReports(u)
+    .map(k => `<option value="${k}">${REPORTS[k].name}</option>`).join('');
+
+  if (isManager(u)){
+    document.getElementById('empPickWrap').style.display = '';
+    loadEmpList().catch(() => {});
+  }
+}
+
+/* รายชื่อพนักงานสำหรับ Mgn/Dev */
+async function loadEmpList(){
+  const recs = await fetchTable(USER_TABLE,
+    [U_NAME, U_CODE], `{${U_CODE}} != ''`);
+  const dl = document.getElementById('empList');
+  dl.innerHTML = recs.map(r => {
+    const code = String(r.fields[U_CODE] || '').split(/[\n,\s]+/)[0].trim();
+    const name = r.fields[U_NAME] || '';
+    return code ? `<option value="${esc(code)}">${esc(name)}</option>` : '';
+  }).join('');
+}
+
+/* ====== DATE PRESETS ====== */
+function setMonth(offset){
+  const now = new Date();
+  const d = new Date(now.getFullYear(), now.getMonth() + offset, 1);
+  const last = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+  const iso = x => x.getFullYear() + '-' +
+    String(x.getMonth() + 1).padStart(2, '0') + '-' +
+    String(x.getDate()).padStart(2, '0');
+  document.getElementById('start').value = iso(d);
+  document.getElementById('end').value = iso(last);
+}
+
+/* ============================================================
+   รายงาน 1: ค่าคอมแชท (Admin) — ตรรกะเดิมทุกข้อ
+   ============================================================ */
+async function reportChat(codes, start, end){
+  const records = await fetchTable(BEN_TABLE,
+    [F_BILLNO, F_DATE, F_SALES, F_ADMINS, F_ADMIN_N, F_DEPOSIT, F_TYPE],
+    `AND(FIND('PAID', ARRAYJOIN({${F_STATUS}})), {${F_DATE}} != '')`);
+
+  const items = records.map(rec => {
+    const f = rec.fields;
+    const billNo = f[F_BILLNO] || '';
+    const dep = String(f[F_DEPOSIT] || '').trim();
+    const types = (f[F_TYPE] || []).map(t => String(t).trim());
+    const zeroSale = types.some(t => ZERO_SALES_TYPES.includes(t));
+    return {
+      billNo, prefix: billPrefix(billNo), hn: extractHN(billNo),
+      day: String(f[F_DATE] || '').slice(0, 10),
+      sales: zeroSale ? 0 : parseMoney(f[F_SALES]),
+      zeroSale,
+      adminN: Number(f[F_ADMIN_N]) || 0,
+      admins: parseAdmins(f[F_ADMINS]),
+      depRef: dep ? billPrefix(dep) : null
+    };
+  }).filter(it => it.day);
+
+  const parent = items.map((_, i) => i);
+  function find(i){ while (parent[i] !== i){ parent[i] = parent[parent[i]]; i = parent[i]; } return i; }
+  function union(a, b){ const ra = find(a), rb = find(b); if (ra !== rb) parent[rb] = ra; }
+  const byHNDay = new Map(), byPrefix = new Map();
+  items.forEach((it, i) => {
+    if (it.hn){
+      const key = it.hn + '|' + it.day;
+      if (byHNDay.has(key)) union(byHNDay.get(key), i); else byHNDay.set(key, i);
+    }
+    if (it.prefix){
+      if (byPrefix.has(it.prefix)) union(byPrefix.get(it.prefix), i); else byPrefix.set(it.prefix, i);
+    }
+  });
+  items.forEach((it, i) => {
+    if (it.depRef && byPrefix.has(it.depRef)) union(i, byPrefix.get(it.depRef));
+  });
+  const groups = new Map();
+  items.forEach((it, i) => {
+    const root = find(i);
+    if (!groups.has(root)) groups.set(root, []);
+    groups.get(root).push(it);
+  });
+
+  const bills = [];
+  for (const list of groups.values()){
+    const allAdmins = new Set();
+    list.forEach(it => it.admins.forEach(a => allAdmins.add(a)));
+    if (![...allAdmins].some(a => matchCode(a, codes))) continue;
+
+    const day = list.map(it => it.day).sort().pop();
+    if (day < start || day > end) continue;
+
+    const sales = list.reduce((s, it) => s + it.sales, 0);
+    const n = Math.max(...list.map(it => it.adminN), allAdmins.size, 1);
+    const rate = rateChat(sales);
+    const depPrefixes = new Set(list.map(it => it.depRef).filter(Boolean));
+    const billNos = list.map(it => ({
+      no: it.billNo, dep: depPrefixes.has(it.prefix), zero: it.zeroSale
+    }));
+    const missing = [...depPrefixes].filter(p => !byPrefix.has(p));
+    const hn = (list.find(it => it.day === day && it.hn) || list.find(it => it.hn) || {}).hn
+               || list[0].billNo;
+    bills.push({ hn, day, billNos, missing, sales, rate, n, com: rate / n });
+  }
+
+  const totalCom = bills.reduce((s, b) => s + b.com, 0);
+  const totalSales = bills.reduce((s, b) => s + b.sales, 0);
+
+  let html = bigNum([
+    [thBaht(totalCom), 'ค่าคอมแชทรวม (บาท)'],
+    [bills.length, 'จำนวนบิล'],
+    [thBaht(totalSales), 'ยอดขายรวม (บาท)']
+  ]);
+
+  const byDay = groupByDay(bills);
+  let rows = '';
+  for (const day of [...byDay.keys()].sort()){
+    rows += `<tr class="daybar"><td colspan="6">📅 ${thDate(day)}</td></tr>`;
+    for (const b of byDay.get(day)){
+      let nos = b.billNos.map(x => {
+        let label = esc(x.no);
+        if (x.dep)  label += ' (มัดจำ)';
+        if (x.zero) label += ' (ใช้คอร์ส ฿0)';
+        return (x.dep || x.zero) ? `<span class="dep">${label}</span>` : label;
+      }).join(', ');
+      if (b.missing.length) nos += `<div class="warn">⚠️ มัดจำ ${esc(b.missing.join(', '))} ไม่พบแถวในตาราง</div>`;
+      rows += `<tr><td>${esc(b.hn)}</td>
+        <td style="font-size:12px;color:#666">${nos}</td>
+        <td class="num">${thBaht(b.sales)}</td>
+        <td class="num">${b.rate}</td>
+        <td class="num">÷ ${b.n}</td>
+        <td class="num"><b>${thBaht(b.com)}</b></td></tr>`;
+    }
+  }
+  html += tableCard(
+    `<tr><th>HN</th><th>เลขบิล</th><th class="num">ยอดขายรวมบิล</th>
+     <th class="num">เรท</th><th class="num">แอดมิน</th><th class="num">ได้รับ</th></tr>`,
+    rows, 6,
+    `<tr class="total"><td colspan="2">รวม ${bills.length} บิล</td>
+     <td class="num">${thBaht(totalSales)}</td><td></td><td></td>
+     <td class="num">${thBaht(totalCom)}</td></tr>`);
+  return html;
+}
+
+/* ============================================================
+   รายงาน 2: ค่าคอมยอดขาย PA — ซื้อคอร์ส + จอง → ขั้นบันได
+   ============================================================ */
+async function fetchBillingPaid(){
+  return fetchTable(BILL_TABLE,
+    [B_DATE, B_TYPE, B_FINAL, B_SALECOM, B_SALE, B_PAY],
+    `AND({${B_STATUS}} = 'PAID', {${B_DATE}} != '')`);
+}
+
+async function reportPA(codes, start, end){
+  const records = await fetchBillingPaid();
+  const byDay = new Map();
+  let totalCourse = 0, totalBooking = 0;
+
+  for (const rec of records){
+    const f = rec.fields;
+    const day = String(f[B_DATE] || '').slice(0, 10);
+    if (!day || day < start || day > end) continue;
+    const type = String(f[B_TYPE] || '').trim();
+    if (type !== 'ซื้อคอร์ส' && type !== 'จอง') continue;
+    const sale = (f[B_SALE] || []).join(', ');
+    if (!matchCode(sale, codes)) continue;
+
+    const amt = parseMoney(f[B_SALECOM] ?? f[B_FINAL]);
+    if (!byDay.has(day)) byDay.set(day, { course: 0, booking: 0 });
+    if (type === 'ซื้อคอร์ส'){ byDay.get(day).course += amt; totalCourse += amt; }
+    else                     { byDay.get(day).booking += amt; totalBooking += amt; }
+  }
+
+  const total = totalCourse + totalBooking;
+  const ladder = paLadder(total);
+
+  let html = bigNum([
+    [thBaht(ladder.com), 'ค่าคอมที่ได้ (บาท)'],
+    [thBaht(total), 'ยอดรวม ซื้อคอร์ส+จอง'],
+    [thBaht(totalCourse), 'ยอดซื้อคอร์ส'],
+    [thBaht(totalBooking), 'ยอดจอง']
+  ]);
+  html += `<div class="card"><b>ขั้นที่ใช้:</b> ${esc(ladder.label)}
+    <div class="note">ขั้นบันได: 300,000–500,000 = เหมา 2,000 | 500,001–800,000 = 2% | 800,001–1,200,000 = 2.5% | 1,200,001–1,600,000 = 3% | 1,600,001–2,000,000 = 4% | 2,000,001 ขึ้นไป = 5% (คิดจากยอดรวมทั้งช่วง)</div></div>`;
+
+  let rows = '';
+  for (const day of [...byDay.keys()].sort()){
+    const d = byDay.get(day);
+    rows += `<tr><td>${thDate(day)}</td>
+      <td class="num">${thBaht(d.course)}</td>
+      <td class="num">${thBaht(d.booking)}</td>
+      <td class="num"><b>${thBaht(d.course + d.booking)}</b></td></tr>`;
+  }
+  html += tableCard(
+    `<tr><th>วันที่</th><th class="num">ยอดซื้อคอร์ส</th><th class="num">ยอดจอง</th><th class="num">รวม</th></tr>`,
+    rows, 4,
+    `<tr class="total"><td>รวมทั้งช่วง</td>
+     <td class="num">${thBaht(totalCourse)}</td>
+     <td class="num">${thBaht(totalBooking)}</td>
+     <td class="num">${thBaht(total)}</td></tr>`);
+  return html;
+}
+
+/* ============================================================
+   รายงาน 3: ค่าคอมยอดขาย Sale — Final Payable × 2%
+   ============================================================ */
+async function reportSale(codes, start, end){
+  const records = await fetchBillingPaid();
+  const byDay = new Map();
+  let total = 0;
+
+  for (const rec of records){
+    const f = rec.fields;
+    const day = String(f[B_DATE] || '').slice(0, 10);
+    if (!day || day < start || day > end) continue;
+    const sale = (f[B_SALE] || []).join(', ');
+    if (!matchCode(sale, codes)) continue;
+
+    const amt = parseMoney(f[B_FINAL]);
+    if (!amt) continue;
+    byDay.set(day, (byDay.get(day) || 0) + amt);
+    total += amt;
+  }
+
+  const com = total * SALE_RATE;
+
+  let html = bigNum([
+    [thBaht(com), 'ค่าคอมที่ได้ (2%)'],
+    [thBaht(total), 'ยอด Final Payable รวม'],
+    [byDay.size, 'จำนวนวันที่มียอด']
+  ]);
+
+  let rows = '';
+  for (const day of [...byDay.keys()].sort()){
+    const amt = byDay.get(day);
+    rows += `<tr><td>${thDate(day)}</td>
+      <td class="num">${thBaht(amt)}</td>
+      <td class="num"><b>${thBaht(amt * SALE_RATE)}</b></td></tr>`;
+  }
+  html += tableCard(
+    `<tr><th>วันที่</th><th class="num">ยอด Final Payable</th><th class="num">ค่าคอม 2%</th></tr>`,
+    rows, 3,
+    `<tr class="total"><td>รวมทั้งช่วง</td>
+     <td class="num">${thBaht(total)}</td>
+     <td class="num">${thBaht(com)}</td></tr>`);
+  return html;
+}
+
+/* ============================================================
+   รายงาน 4: ค่ามือ BT — รวม new com BT รายวัน
+   ============================================================ */
+async function reportBT(codes, start, end){
+  const records = await fetchTable(BEN_TABLE,
+    [F_DATE, F_BT_COM, F_BT_WHO],
+    `AND(FIND('PAID', ARRAYJOIN({${F_STATUS}})), {${F_DATE}} != '', {${F_BT_COM}} != '')`);
+
+  const byDay = new Map();
+  let total = 0, count = 0;
+
+  for (const rec of records){
+    const f = rec.fields;
+    const day = String(f[F_DATE] || '').slice(0, 10);
+    if (!day || day < start || day > end) continue;
+    if (!matchCode(f[F_BT_WHO], codes)) continue;
+    const amt = parseMoney(f[F_BT_COM]);
+    if (!amt) continue;
+    byDay.set(day, (byDay.get(day) || 0) + amt);
+    total += amt; count++;
+  }
+
+  let html = bigNum([
+    [thBaht(total), 'ค่ามือ BT รวม (บาท)'],
+    [count, 'จำนวนรายการ'],
+    [byDay.size, 'จำนวนวัน']
+  ]);
+
+  let rows = '';
+  for (const day of [...byDay.keys()].sort()){
+    rows += `<tr><td>${thDate(day)}</td>
+      <td class="num"><b>${thBaht(byDay.get(day))}</b></td></tr>`;
+  }
+  html += tableCard(
+    `<tr><th>วันที่</th><th class="num">ค่ามือ BT</th></tr>`,
+    rows, 2,
+    `<tr class="total"><td>รวมทั้งช่วง</td><td class="num">${thBaht(total)}</td></tr>`);
+  return html;
+}
+
+/* ============================================================
+   รายงาน 5: ค่ามือหมอ (Mgn/Dev) — ตามสคริปต์เดิม แสดงผลอย่างเดียว
+   ============================================================ */
+async function reportDoctor(codes, start, end){
+  const benefit = await fetchTable(BEN_TABLE,
+    [F_DATE, F_DR_COM, F_DR_WHO],
+    `AND(FIND('PAID', ARRAYJOIN({${F_STATUS}})), {${F_DATE}} != '')`);
+
+  const feesByDay = new Map();
+  let feeTotal = 0, allDoctorTotal = 0;
+
+  for (const rec of benefit.filter(r => r.fields[F_DR_COM])){
+    const f = rec.fields;
+    const day = String(f[F_DATE] || '').slice(0, 10);
+    if (!day || day < start || day > end) continue;
+    const amt = parseMoney(f[F_DR_COM]);
+    if (!amt) continue;
+    allDoctorTotal += amt;                       // ค่ามือรวมหมอทุกคน
+    if (!matchCode(f[F_DR_WHO], codes)) continue;
+    feesByDay.set(day, (feesByDay.get(day) || 0) + amt);
+    feeTotal += amt;
+  }
+
+  // ค่าชั่วโมงจาก Shiff
+  const shiff = await fetchTable(SHIFF_TABLE,
+    [SH_EMP, SH_DATE, SH_HOUR], `{${SH_DATE}} != ''`);
+  const hoursByDay = new Map();
+  let hourlyTotal = 0;
+  for (const rec of shiff){
+    const f = rec.fields;
+    const day = String(f[SH_DATE] || '').slice(0, 10);
+    if (!day || day < start || day > end) continue;
+    if (!matchCode(f[SH_EMP], codes)) continue;
+    const amt = parseMoney(f[SH_HOUR]);
+    if (!amt) continue;
+    hoursByDay.set(day, (hoursByDay.get(day) || 0) + amt);
+    hourlyTotal += amt;
+  }
+
+  // ยอดร้านรวม (จอง/ซื้อคอร์ส ผ่านช่องทางบริษัท)
+  const billing = await fetchBillingPaid();
+  let shopTotal = 0;
+  for (const rec of billing){
+    const f = rec.fields;
+    const day = String(f[B_DATE] || '').slice(0, 10);
+    if (!day || day < start || day > end) continue;
+    const type = String(f[B_TYPE] || '').trim();
+    if (type !== 'จอง' && type !== 'ซื้อคอร์ส') continue;
+    if (!PAY_OK.has(String(f[B_PAY] || '').trim())) continue;
+    shopTotal += parseMoney(f[B_FINAL]);
+  }
+
+  let html = bigNum([
+    [thBaht(feeTotal), 'ค่ามือ (บาท)'],
+    [thBaht(hourlyTotal), 'ค่าชั่วโมง (บาท)'],
+    [thBaht(allDoctorTotal), 'ค่ามือรวมหมอทุกคน'],
+    [thBaht(shopTotal), 'ยอดร้านรวม']
+  ]);
+
+  const days = [...new Set([...feesByDay.keys(), ...hoursByDay.keys()])].sort();
+  let rows = '';
+  for (const day of days){
+    rows += `<tr><td>${thDate(day)}</td>
+      <td class="num">${thBaht(feesByDay.get(day) || 0)}</td>
+      <td class="num">${thBaht(hoursByDay.get(day) || 0)}</td></tr>`;
+  }
+  html += tableCard(
+    `<tr><th>วันที่</th><th class="num">ค่ามือ</th><th class="num">ค่าชั่วโมง</th></tr>`,
+    rows, 3,
+    `<tr class="total"><td>รวมทั้งช่วง</td>
+     <td class="num">${thBaht(feeTotal)}</td>
+     <td class="num">${thBaht(hourlyTotal)}</td></tr>`);
+  html += `<div class="note">* แสดงผลอย่างเดียว ไม่เขียนสรุปกลับลงฟิลด์ใน Airtable</div>`;
+  return html;
+}
+
+/* ====== RENDER HELPERS ====== */
+function bigNum(pairs){
+  return `<div class="card"><div class="bignum">` +
+    pairs.map(([v, l]) => `<div class="box"><div class="v">${v}</div><div class="l">${l}</div></div>`).join('') +
+    `</div></div>`;
+}
+function tableCard(head, rows, cols, totalRow){
+  return `<div class="card"><table>${head}` +
+    (rows || `<tr><td colspan="${cols}" style="text-align:center;color:#999">ไม่มีรายการในช่วงที่เลือก</td></tr>`) +
+    totalRow + `</table></div>`;
+}
+function groupByDay(bills){
+  const m = new Map();
+  for (const b of bills){
+    if (!m.has(b.day)) m.set(b.day, []);
+    m.get(b.day).push(b);
+  }
+  return m;
+}
+
+/* ====== RUN ====== */
+const RUNNERS = { chat: reportChat, pa: reportPA, sale: reportSale, bt: reportBT, doctor: reportDoctor };
+
+async function run(){
+  const u = session();
+  if (!u){ logout(); return; }
+  const key = document.getElementById('reportSel').value;
+  if (!allowedReports(u).includes(key)){ alert('ไม่มีสิทธิ์ดูรายงานนี้'); return; }
+
+  const start = document.getElementById('start').value;
+  const end = document.getElementById('end').value;
+  const st = document.getElementById('status');
+  if (!start || !end){ alert('กรุณาเลือกวันที่เริ่มและสิ้นสุด'); return; }
+
+  // Mgn/Dev เลือกพนักงานได้ / คนอื่นดูของตัวเองเท่านั้น
+  let codes = u.codes, empLabel = u.name;
+  if (isManager(u)){
+    const picked = document.getElementById('empPick').value.trim();
+    if (picked){ codes = [picked]; empLabel = picked; }
+    else if (!codes.length){
+      alert('กรุณาเลือกหรือพิมพ์ Emp code ของพนักงานที่ต้องการดู'); return;
+    }
+  }
+
+  st.className = ''; st.textContent = 'กำลังดึงข้อมูล...';
+  document.getElementById('result').innerHTML = '';
+  try {
+    const html = await RUNNERS[key](codes, start, end);
+    st.textContent = 'คำนวณเสร็จแล้ว';
+    document.getElementById('printTitle').textContent =
+      REPORTS[key].name + ' — ' + empLabel + ' (' + codes.join(', ') + ')';
+    document.getElementById('printRange').textContent =
+      `ช่วงวันที่ ${thDate(start)} – ${thDate(end)}`;
+    document.getElementById('result').innerHTML = html;
+  } catch (e){
+    st.className = 'err'; st.textContent = '❌ ' + e.message;
+  }
+}
+
+/* ====== INIT ====== */
+setMonth(0);
+if (session()) showReport();
+</script>
+</body>
+</html>
