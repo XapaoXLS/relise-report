@@ -20,15 +20,17 @@
   }
   label { font-size: 13px; color: #555; display: block; margin-bottom: 4px; }
   input, select {
-    padding: 9px 11px; border: 1px solid #ccc; border-radius: 8px;
-    font-size: 14px; font-family: inherit; width: 100%; background: #fff;
+    padding: 10px 11px; border: 1px solid #ccc; border-radius: 8px;
+    font-size: 16px; /* 16px กัน iOS ซูมตอนแตะช่องกรอก */
+    font-family: inherit; width: 100%; background: #fff;
   }
   input[type=date] { width: auto; }
   .row { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-end; }
   .row > div { min-width: 0; }
   button {
-    padding: 9px 16px; border: 0; border-radius: 8px; font-size: 14px;
+    padding: 10px 16px; border: 0; border-radius: 8px; font-size: 14px;
     font-family: inherit; cursor: pointer; background: #e3e6ea; white-space: nowrap;
+    min-height: 42px;
   }
   button.primary { background: #2563eb; color: #fff; font-weight: 600; }
   button.ghost { background: transparent; color: #2563eb; }
@@ -54,6 +56,8 @@
     font-size: 11.5px; border-radius: 20px; padding: 2px 9px; margin-left: 4px;
   }
 
+  /* ตารางเลื่อนแนวนอนได้บนจอแคบ แทนที่จะดันหน้าให้ล้น */
+  .tscroll { overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 0 -4px; }
   table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
   th, td { padding: 7px 9px; border-bottom: 1px solid #eee; text-align: left; }
   th { background: #f0f2f5; font-weight: 600; white-space: nowrap; }
@@ -73,6 +77,31 @@
   .bignum .box .l { font-size: 12px; color: #666; margin-top: 2px; }
 
   .report-title { display: none; }
+
+  /* ====== มือถือ ====== */
+  @media (max-width: 560px) {
+    .wrap { padding: 12px; }
+    #loginView { margin-top: 5vh; }
+    #loginView .card { padding: 20px; }
+    .card { padding: 14px; }
+    h1 { font-size: 19px; }
+
+    /* แถบควบคุม: วันที่เต็มแถว, ปุ่มเรียง 2 ต่อแถว */
+    .row { gap: 10px; }
+    .row > div { flex: 1 1 100%; }
+    .row input[type=date] { width: 100%; }
+    .row button { flex: 1 1 calc(50% - 5px); }
+    .row button.primary { flex: 1 1 100%; order: 9; }
+
+    /* กล่องสรุปตัวเลข 2 ต่อแถว */
+    .bignum { gap: 10px; }
+    .bignum .box { flex: 1 1 calc(50% - 5px); min-width: 0; padding: 10px 8px; }
+    .bignum .box .v { font-size: 18px; }
+
+    .userbar { align-items: flex-start; }
+    table { font-size: 13px; }
+    th, td { padding: 6px 7px; }
+  }
 
   @media print {
     body { background: #fff; }
@@ -781,9 +810,9 @@ function bigNum(pairs){
     `</div></div>`;
 }
 function tableCard(head, rows, cols, totalRow){
-  return `<div class="card"><table>${head}` +
+  return `<div class="card"><div class="tscroll"><table>${head}` +
     (rows || `<tr><td colspan="${cols}" style="text-align:center;color:#999">ไม่มีรายการในช่วงที่เลือก</td></tr>`) +
-    totalRow + `</table></div>`;
+    totalRow + `</table></div></div>`;
 }
 function groupByDay(bills){
   const m = new Map();
