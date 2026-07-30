@@ -67,6 +67,17 @@
   .dep { color: #b45309; }
   .warn { color: #c0392b; font-size: 12px; }
   .note { color: #666; font-size: 12.5px; margin-top: 8px; }
+  .bill-list { min-width: 210px; }
+  .bill-line + .bill-line { margin-top: 5px; padding-top: 5px; border-top: 1px dashed #e5e7eb; }
+  .bill-meta { color: #666; font-size: 12px; }
+  .statuschip {
+    display: inline-block; border-radius: 20px; padding: 1px 7px;
+    font-size: 11px; font-weight: 600; white-space: nowrap;
+  }
+  .statuschip.used { background: #dcfce7; color: #15803d; }
+  .statuschip.pending { background: #fef3c7; color: #a16207; }
+  .statuschip.unknown { background: #e5e7eb; color: #4b5563; }
+  .section-title { font-size: 17px; margin: 0 0 4px; }
 
   .bignum { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 4px; }
   .bignum .box {
@@ -204,6 +215,7 @@ const F_DR_WHO  = 'DR (from Billing)';
 /* ตาราง Billing */
 const BILL_TABLE = 'tblpBtlV2PKgXLxKV';
 const B_DATE   = 'วันที่';
+const B_BILLNO = 'Billing ID (Formula)';
 const B_STATUS = 'Billing Status';
 const B_TYPE   = 'Billing Type';
 const B_FINAL  = 'Final Payable';
@@ -211,6 +223,8 @@ const B_SALECOM= 'ยอดคำนวนค่าคอมเซลล์';
 const B_SALE   = 'Sale';
 const B_PAY    = 'Payment 1';
 const B_HN     = 'Patient HN';
+const B_USED   = 'Used?';
+const B_BUNDLE = 'Item Name';  // ชื่อจาก Bundle Purchased
 
 /* ตาราง Shiff */
 const SHIFF_TABLE = 'Shiff';
@@ -271,6 +285,40 @@ function billPrefix(billNo){
 }
 const parseAdmins = text =>
   String(text || '').split(/[\n,]+/).map(s => s.trim()).filter(Boolean);
+
+const cellText = value => Array.isArray(value)
+  ? value.map(v => String(v ?? '').trim()).filter(Boolean).join(', ')
+  : String(value ?? '').trim();
+
+function bookingStatus(value){
+  const text = cellText(value);
+  if (text.includes('ใช้แล้ว')) return { label: 'ใช้แล้ว', cls: 'used' };
+  if (text.includes('ยังไม่ใช้')) return { label: 'ยังไม่เข้ามาใช้', cls: 'pending' };
+  return { label: 'ไม่พบสถานะ Used?', cls: 'unknown' };
+}
+
+function billDetails(bills){
+  return `<div class="bill-list">${bills.map(b => {
+    const status = b.type === 'จอง' ? bookingStatus(b.used) : null;
+    return `<div class="bill-line"><b>${esc(b.no || '(ไม่มีเลขบิล)')}</b>
+      <div class="bill-meta">${esc(b.type || '(ไม่ระบุประเภท)')} · ${thBaht(b.amount)} บาท
+      ${status ? ` <span class="statuschip ${status.cls}">${status.label}</span>` : ''}</div>
+      <div class="bill-meta">ชื่อ Bundle Purchased: ${esc(b.bundle || '-')}</div></div>`;
+  }).join('')}</div>`;
+}
+
+function indexBilling(records){
+  const byBill = new Map();
+  for (const rec of records){
+    const f = rec.fields;
+    const billNo = cellText(f[B_BILLNO]);
+    if (!billNo) continue;
+    const info = { used: f[B_USED], bundle: cellText(f[B_BUNDLE]) };
+    byBill.set(billNo, info);
+    byBill.set(billPrefix(billNo), info);
+  }
+  return byBill;
+}
 
 const matchCode = (text, codes) =>
   codes.some(c => String(text || '').includes(c));
@@ -423,9 +471,15 @@ function setMonth(offset){
    รายงาน 1: ค่าคอมแชท (Admin) — ตรรกะเดิมทุกข้อ
    ============================================================ */
 async function reportChat(codes, start, end){
-  const records = await fetchTable(BEN_TABLE,
-    [F_BILLNO, F_DATE, F_SALES, F_ADMINS, F_ADMIN_N, F_DEPOSIT, F_TYPE],
-    `AND(FIND('PAID', ARRAYJOIN({${F_STATUS}})), {${F_DATE}} != '')`);
+  const [records, billingRecords] = await Promise.all([
+    fetchTable(BEN_TABLE,
+      [F_BILLNO, F_DATE, F_SALES, F_ADMINS, F_ADMIN_N, F_DEPOSIT, F_TYPE],
+      `AND(FIND('PAID', ARRAYJOIN({${F_STATUS}})), {${F_DATE}} != '')`),
+    fetchBillingPaid()
+  ]);
+
+  // สถานะจองและชื่อ Bundle ยึดข้อมูลจากตาราง Billing โดยตรง
+  const billingByBill = indexBilling(billingRecords);
 
   const items = records.map(rec => {
     const f = rec.fields;
@@ -433,11 +487,15 @@ async function reportChat(codes, start, end){
     const dep = String(f[F_DEPOSIT] || '').trim();
     const types = (f[F_TYPE] || []).map(t => String(t).trim());
     const zeroSale = types.some(t => ZERO_SALES_TYPES.includes(t));
+    const billingInfo = billingByBill.get(billNo) || billingByBill.get(billPrefix(billNo)) || {};
     return {
       billNo, prefix: billPrefix(billNo), hn: extractHN(billNo),
       day: String(f[F_DATE] || '').slice(0, 10),
       sales: zeroSale ? 0 : parseMoney(f[F_SALES]),
       zeroSale,
+      booking: types.includes('จอง'),
+      used: billingInfo.used,
+      bundle: billingInfo.bundle,
       adminN: Number(f[F_ADMIN_N]) || 0,
       admins: parseAdmins(f[F_ADMINS]),
       depRef: dep ? billPrefix(dep) : null
@@ -467,11 +525,16 @@ async function reportChat(codes, start, end){
     groups.get(root).push(it);
   });
 
-  const bills = [];
+  const bills = [], bookings = [];
   for (const list of groups.values()){
     const allAdmins = new Set();
     list.forEach(it => it.admins.forEach(a => allAdmins.add(a)));
     if (![...allAdmins].some(a => matchCode(a, codes))) continue;
+
+    // แยกรายการจองตามวันของบิลจอง เพื่อให้ยังเห็นบิลที่ถูกนำไปใช้ในวันหลัง
+    for (const it of list){
+      if (it.booking && it.day >= start && it.day <= end) bookings.push(it);
+    }
 
     const day = list.map(it => it.day).sort().pop();
     if (day < start || day > end) continue;
@@ -481,7 +544,8 @@ async function reportChat(codes, start, end){
     const rate = rateChat(sales);
     const depPrefixes = new Set(list.map(it => it.depRef).filter(Boolean));
     const billNos = list.map(it => ({
-      no: it.billNo, dep: depPrefixes.has(it.prefix), zero: it.zeroSale
+      no: it.billNo, dep: depPrefixes.has(it.prefix), zero: it.zeroSale,
+      booking: it.booking, used: it.used, bundle: it.bundle
     }));
     const missing = [...depPrefixes].filter(p => !byPrefix.has(p));
     const hn = (list.find(it => it.day === day && it.hn) || list.find(it => it.hn) || {}).hn
@@ -513,8 +577,12 @@ async function reportChat(codes, start, end){
         let label = esc(x.no);
         if (x.dep)  label += ' (มัดจำ)';
         if (x.zero) label += ' (ใช้คอร์ส ฿0)';
-        return (x.dep || x.zero) ? `<span class="dep">${label}</span>` : label;
-      }).join(', ');
+        const status = x.booking ? bookingStatus(x.used) : null;
+        const bill = (x.dep || x.zero) ? `<span class="dep">${label}</span>` : label;
+        return `<div class="bill-line">${bill}${status
+          ? ` <span class="statuschip ${status.cls}">${status.label}</span>` : ''}
+          <div class="bill-meta">ชื่อ Bundle Purchased: ${esc(x.bundle || '-')}</div></div>`;
+      }).join('');
       if (b.missing.length) nos += `<div class="warn">⚠️ มัดจำ ${esc(b.missing.join(', '))} ไม่พบแถวในตาราง</div>`;
       rows += `<tr><td>${esc(b.hn)}</td>
         <td style="font-size:12px;color:#666">${nos}</td>
@@ -531,6 +599,25 @@ async function reportChat(codes, start, end){
     `<tr class="total"><td colspan="2">รวม ${bills.length} บิล</td>
      <td class="num">${thBaht(totalSales)}</td><td></td><td></td>
      <td class="num">${thBaht(totalCom)}</td></tr>`);
+
+  const usedBookingCount = bookings.filter(b => bookingStatus(b.used).cls === 'used').length;
+  const pendingBookingCount = bookings.filter(b => bookingStatus(b.used).cls === 'pending').length;
+  const unknownBookingCount = bookings.length - usedBookingCount - pendingBookingCount;
+  const bookingRows = bookings.sort((a, b) => a.day.localeCompare(b.day) || a.billNo.localeCompare(b.billNo))
+    .map(b => {
+      const status = bookingStatus(b.used);
+      return `<tr><td>${thDate(b.day)}</td><td>${esc(b.hn || '-')}</td>
+        <td><b>${esc(b.billNo || '(ไม่มีเลขบิล)')}</b></td>
+        <td>${esc(b.bundle || '-')}</td>
+        <td class="num">${thBaht(b.sales)}</td>
+        <td><span class="statuschip ${status.cls}">${status.label}</span></td></tr>`;
+    }).join('');
+  html += `<div class="card"><h2 class="section-title">รายการจองทั้งหมดในช่วงวันที่</h2>
+    <div class="note">สถานะอ้างอิงจากฟิลด์ Used? ใน Billing · รวม ${bookings.length} รายการ · ใช้แล้ว ${usedBookingCount} · ยังไม่เข้ามาใช้ ${pendingBookingCount}${unknownBookingCount ? ` · ไม่พบสถานะ ${unknownBookingCount}` : ''}</div>
+    <div class="tscroll" style="margin-top:10px"><table>
+      <tr><th>วันที่จอง</th><th>HN</th><th>เลขบิล</th><th>ชื่อ Bundle Purchased</th><th class="num">ยอดจอง</th><th>สถานะ</th></tr>
+      ${bookingRows || `<tr><td colspan="6" style="text-align:center;color:#999">ไม่มีรายการจองในช่วงที่เลือก</td></tr>`}
+    </table></div></div>`;
   return html;
 }
 
@@ -539,15 +626,15 @@ async function reportChat(codes, start, end){
    ============================================================ */
 async function fetchBillingPaid(){
   return fetchTable(BILL_TABLE,
-    [B_DATE, B_TYPE, B_FINAL, B_SALECOM, B_SALE, B_PAY, B_HN],
+    [B_BILLNO, B_DATE, B_TYPE, B_FINAL, B_SALECOM, B_SALE, B_PAY, B_HN, B_USED, B_BUNDLE],
     `AND({${B_STATUS}} = 'PAID', {${B_DATE}} != '')`);
 }
 
 async function reportPA(codes, start, end){
   const records = await fetchBillingPaid();
-  // day -> Map(HN -> {course, booking, count})  รวมบิล HN เดียวกันในวันเดียวกันเป็นแถวเดียว
+  // day -> Map(HN -> {course, booking, count, bills})  รวม HN เดียวกันแต่ยังเก็บรายละเอียดทุกบิล
   const byDay = new Map();
-  let totalCourse = 0, totalBooking = 0;
+  let totalCourse = 0, totalBooking = 0, billCount = 0;
 
   for (const rec of records){
     const f = rec.fields;
@@ -555,7 +642,7 @@ async function reportPA(codes, start, end){
     if (!day || day < start || day > end) continue;
     const type = String(f[B_TYPE] || '').trim();
     if (type !== 'ซื้อคอร์ส' && type !== 'จอง') continue;
-    const sale = (f[B_SALE] || []).join(', ');
+    const sale = cellText(f[B_SALE]);
     if (!matchCode(sale, codes)) continue;
 
     const hn = String(f[B_HN] || '').trim() || '(ไม่มี HN)';
@@ -563,9 +650,10 @@ async function reportPA(codes, start, end){
 
     if (!byDay.has(day)) byDay.set(day, new Map());
     const hnMap = byDay.get(day);
-    if (!hnMap.has(hn)) hnMap.set(hn, { course: 0, booking: 0, count: 0 });
+    if (!hnMap.has(hn)) hnMap.set(hn, { course: 0, booking: 0, count: 0, bills: [] });
     const b = hnMap.get(hn);
-    b.count++;
+    b.count++; billCount++;
+    b.bills.push({ no: cellText(f[B_BILLNO]), type, amount: amt, used: f[B_USED], bundle: cellText(f[B_BUNDLE]) });
     if (type === 'ซื้อคอร์ส'){ b.course += amt; totalCourse += amt; }
     else                     { b.booking += amt; totalBooking += amt; }
   }
@@ -577,33 +665,35 @@ async function reportPA(codes, start, end){
     [thBaht(ladder.com), 'ค่าคอมที่ได้ (บาท)'],
     [thBaht(total), 'ยอดรวม ซื้อคอร์ส+จอง'],
     [thBaht(totalCourse), 'ยอดซื้อคอร์ส'],
-    [thBaht(totalBooking), 'ยอดจอง']
+    [thBaht(totalBooking), 'ยอดจอง'],
+    [billCount, 'จำนวนบิล']
   ]);
   html += `<div class="card"><b>ขั้นที่ใช้:</b> ${esc(ladder.label)}
     <div class="note">ขั้นบันได: 300,000–500,000 = เหมา 2,000 | 500,001–800,000 = 2% | 800,001–1,200,000 = 2.5% | 1,200,001–1,600,000 = 3% | 1,600,001–2,000,000 = 4% | 2,000,001 ขึ้นไป = 5% (คิดจากยอดรวมทั้งช่วง)</div></div>`;
 
   let rows = '';
   for (const day of [...byDay.keys()].sort()){
-    rows += `<tr class="daybar"><td colspan="4">📅 ${thDate(day)}</td></tr>`;
+    rows += `<tr class="daybar"><td colspan="5">📅 ${thDate(day)}</td></tr>`;
     const hnMap = byDay.get(day);
     let dCourse = 0, dBooking = 0;
     for (const hn of [...hnMap.keys()].sort()){
       const b = hnMap.get(hn);
       dCourse += b.course; dBooking += b.booking;
       rows += `<tr><td>${esc(hn)}${b.count > 1 ? ` <span class="note">(${b.count} บิล)</span>` : ''}</td>
+        <td>${billDetails(b.bills)}</td>
         <td class="num">${b.course ? thBaht(b.course) : '-'}</td>
         <td class="num">${b.booking ? thBaht(b.booking) : '-'}</td>
         <td class="num"><b>${thBaht(b.course + b.booking)}</b></td></tr>`;
     }
-    rows += `<tr><td style="color:#666">รวมวัน ${thDate(day)}</td>
+    rows += `<tr><td colspan="2" style="color:#666">รวมวัน ${thDate(day)}</td>
       <td class="num" style="color:#666">${thBaht(dCourse)}</td>
       <td class="num" style="color:#666">${thBaht(dBooking)}</td>
       <td class="num" style="color:#666"><b>${thBaht(dCourse + dBooking)}</b></td></tr>`;
   }
   html += tableCard(
-    `<tr><th>HN</th><th class="num">ยอดซื้อคอร์ส</th><th class="num">ยอดจอง</th><th class="num">รวม</th></tr>`,
-    rows, 4,
-    `<tr class="total"><td>รวมทั้งช่วง</td>
+    `<tr><th>HN</th><th>รายละเอียดบิล</th><th class="num">ยอดซื้อคอร์ส</th><th class="num">ยอดจอง</th><th class="num">รวม</th></tr>`,
+    rows, 5,
+    `<tr class="total"><td colspan="2">รวมทั้งช่วง (${billCount} บิล)</td>
      <td class="num">${thBaht(totalCourse)}</td>
      <td class="num">${thBaht(totalBooking)}</td>
      <td class="num">${thBaht(total)}</td></tr>`);
@@ -615,9 +705,9 @@ async function reportPA(codes, start, end){
    ============================================================ */
 async function reportSale(codes, start, end){
   const records = await fetchBillingPaid();
-  // day -> Map(HN -> {course, bookAmt, bookCount, count})  รวมบิล HN เดียวกันในวันเดียวกัน
+  // day -> Map(HN -> {..., bills})  รวม HN เดียวกันแต่ยังเก็บรายละเอียดทุกบิล
   const byDay = new Map();
-  let total = 0, totalBookCount = 0;
+  let total = 0, totalBookCount = 0, billCount = 0;
 
   for (const rec of records){
     const f = rec.fields;
@@ -625,23 +715,25 @@ async function reportSale(codes, start, end){
     if (!day || day < start || day > end) continue;
     const type = String(f[B_TYPE] || '').trim();
     if (type !== 'ซื้อคอร์ส' && type !== 'จอง') continue;
-    const sale = (f[B_SALE] || []).join(', ');
+    const sale = cellText(f[B_SALE]);
     if (!matchCode(sale, codes)) continue;
 
     const hn = String(f[B_HN] || '').trim() || '(ไม่มี HN)';
     if (!byDay.has(day)) byDay.set(day, new Map());
     const hnMap = byDay.get(day);
-    if (!hnMap.has(hn)) hnMap.set(hn, { course: 0, bookAmt: 0, bookCount: 0, count: 0 });
+    if (!hnMap.has(hn)) hnMap.set(hn, { course: 0, bookAmt: 0, bookCount: 0, count: 0, bills: [] });
     const b = hnMap.get(hn);
-    b.count++;
+    b.count++; billCount++;
+    const billAmt = parseMoney(f[B_FINAL]);
+    b.bills.push({ no: cellText(f[B_BILLNO]), type, amount: billAmt, used: f[B_USED], bundle: cellText(f[B_BUNDLE]) });
 
     if (type === 'จอง'){
       // บิลจอง: แสดงไว้ให้เห็น แต่ไม่มีค่าคอม
-      b.bookAmt += parseMoney(f[B_FINAL]);
+      b.bookAmt += billAmt;
       b.bookCount++;
       totalBookCount++;
     } else {
-      const amt = parseMoney(f[B_FINAL]);
+      const amt = billAmt;
       b.course += amt;
       total += amt;
     }
@@ -652,13 +744,14 @@ async function reportSale(codes, start, end){
   let html = bigNum([
     [thBaht(com), 'ค่าคอมที่ได้ (2%)'],
     [thBaht(total), 'ยอดซื้อคอร์ส (Final Payable)'],
-    [totalBookCount, 'จำนวนรายการจอง']
+    [totalBookCount, 'จำนวนรายการจอง'],
+    [billCount, 'จำนวนบิลทั้งหมด']
   ]);
   html += `<div class="card note">คิดค่าคอม 2% เฉพาะบิล "ซื้อคอร์ส" เท่านั้น — บิล "จอง" แสดงไว้ให้เห็นแต่<b>ไม่มีค่าคอม</b></div>`;
 
   let rows = '';
   for (const day of [...byDay.keys()].sort()){
-    rows += `<tr class="daybar"><td colspan="4">📅 ${thDate(day)}</td></tr>`;
+    rows += `<tr class="daybar"><td colspan="5">📅 ${thDate(day)}</td></tr>`;
     const hnMap = byDay.get(day);
     let dCourse = 0;
     for (const hn of [...hnMap.keys()].sort()){
@@ -668,19 +761,20 @@ async function reportSale(codes, start, end){
         ? `${thBaht(b.bookAmt)} <span class="dep">(จอง ${b.bookCount} รายการ — ไม่มีค่าคอม)</span>`
         : '-';
       rows += `<tr><td>${esc(hn)}${b.count > 1 ? ` <span class="note">(${b.count} บิล)</span>` : ''}</td>
+        <td>${billDetails(b.bills)}</td>
         <td class="num">${b.course ? thBaht(b.course) : '-'}</td>
         <td class="num">${bookCell}</td>
         <td class="num"><b>${b.course ? thBaht(b.course * SALE_RATE) : '-'}</b></td></tr>`;
     }
-    rows += `<tr><td style="color:#666">รวมวัน ${thDate(day)}</td>
+    rows += `<tr><td colspan="2" style="color:#666">รวมวัน ${thDate(day)}</td>
       <td class="num" style="color:#666">${thBaht(dCourse)}</td>
       <td class="num"></td>
       <td class="num" style="color:#666"><b>${thBaht(dCourse * SALE_RATE)}</b></td></tr>`;
   }
   html += tableCard(
-    `<tr><th>HN</th><th class="num">ยอดซื้อคอร์ส</th><th class="num">ยอดจอง (ไม่มีค่าคอม)</th><th class="num">ค่าคอม 2%</th></tr>`,
-    rows, 4,
-    `<tr class="total"><td>รวมทั้งช่วง</td>
+    `<tr><th>HN</th><th>รายละเอียดบิล</th><th class="num">ยอดซื้อคอร์ส</th><th class="num">ยอดจอง (ไม่มีค่าคอม)</th><th class="num">ค่าคอม 2%</th></tr>`,
+    rows, 5,
+    `<tr class="total"><td colspan="2">รวมทั้งช่วง (${billCount} บิล)</td>
      <td class="num">${thBaht(total)}</td>
      <td class="num">จอง ${totalBookCount} รายการ</td>
      <td class="num">${thBaht(com)}</td></tr>`);
@@ -691,12 +785,16 @@ async function reportSale(codes, start, end){
    รายงาน 4: ค่ามือ BT — รวม new com BT รายวัน
    ============================================================ */
 async function reportBT(codes, start, end){
-  const records = await fetchTable(BEN_TABLE,
-    [F_DATE, F_BT_COM, F_BT_WHO],
-    `AND(FIND('PAID', ARRAYJOIN({${F_STATUS}})), {${F_DATE}} != '', {${F_BT_COM}} != '')`);
+  const [records, billingRecords] = await Promise.all([
+    fetchTable(BEN_TABLE,
+      [F_BILLNO, F_DATE, F_TYPE, F_SALES, F_BT_COM, F_BT_WHO],
+      `AND(FIND('PAID', ARRAYJOIN({${F_STATUS}})), {${F_DATE}} != '', {${F_BT_COM}} != '')`),
+    fetchBillingPaid()
+  ]);
+  const billingByBill = indexBilling(billingRecords);
 
   const byDay = new Map();
-  let total = 0, count = 0;
+  let total = 0, totalAfterDiscount = 0;
 
   for (const rec of records){
     const f = rec.fields;
@@ -705,25 +803,50 @@ async function reportBT(codes, start, end){
     if (!matchCode(f[F_BT_WHO], codes)) continue;
     const amt = parseMoney(f[F_BT_COM]);
     if (!amt) continue;
-    byDay.set(day, (byDay.get(day) || 0) + amt);
-    total += amt; count++;
+    if (!byDay.has(day)) byDay.set(day, []);
+    const billNo = cellText(f[F_BILLNO]);
+    const billingInfo = billingByBill.get(billNo) || billingByBill.get(billPrefix(billNo)) || {};
+    // ฟิลด์ "ยอดขาย" ในตารางค่ามือ คือค่าเดียวกับ Total After discount (DR)
+    const afterDiscount = parseMoney(f[F_SALES]);
+    byDay.get(day).push({
+      billNo, hn: extractHN(billNo), type: cellText(f[F_TYPE]),
+      bundle: billingInfo.bundle, afterDiscount, amt
+    });
+    total += amt;
+    totalAfterDiscount += afterDiscount;
   }
+
+  const count = [...byDay.values()].reduce((sum, list) => sum + list.length, 0);
 
   let html = bigNum([
     [thBaht(total), 'ค่ามือ BT รวม (บาท)'],
+    [thBaht(totalAfterDiscount), 'Total After discount (DR)'],
     [count, 'จำนวนรายการ'],
     [byDay.size, 'จำนวนวัน']
   ]);
 
   let rows = '';
   for (const day of [...byDay.keys()].sort()){
-    rows += `<tr><td>${thDate(day)}</td>
-      <td class="num"><b>${thBaht(byDay.get(day))}</b></td></tr>`;
+    const items = byDay.get(day);
+    rows += `<tr class="daybar"><td colspan="6">📅 ${thDate(day)}</td></tr>`;
+    for (const item of items){
+      rows += `<tr><td>${esc(item.hn || '(ไม่มี HN)')}</td>
+        <td><b>${esc(item.billNo || '(ไม่มีเลขบิล)')}</b></td>
+        <td>${esc(item.type || '-')}</td>
+        <td>${esc(item.bundle || '-')}</td>
+        <td class="num">${thBaht(item.afterDiscount)}</td>
+        <td class="num"><b>${thBaht(item.amt)}</b></td></tr>`;
+    }
+    const dayAfterDiscount = items.reduce((sum, item) => sum + item.afterDiscount, 0);
+    const dayTotal = items.reduce((sum, item) => sum + item.amt, 0);
+    rows += `<tr><td colspan="4" style="color:#666">รวมวัน ${thDate(day)}</td>
+      <td class="num" style="color:#666">${thBaht(dayAfterDiscount)}</td>
+      <td class="num" style="color:#666"><b>${thBaht(dayTotal)}</b></td></tr>`;
   }
   html += tableCard(
-    `<tr><th>วันที่</th><th class="num">ค่ามือ BT</th></tr>`,
-    rows, 2,
-    `<tr class="total"><td>รวมทั้งช่วง</td><td class="num">${thBaht(total)}</td></tr>`);
+    `<tr><th>HN</th><th>เลขบิล</th><th>ประเภทบิล</th><th>ชื่อ Bundle Purchased</th><th class="num">Total After discount (DR)</th><th class="num">ค่ามือ BT</th></tr>`,
+    rows, 6,
+    `<tr class="total"><td colspan="4">รวมทั้งช่วง (${count} รายการ)</td><td class="num">${thBaht(totalAfterDiscount)}</td><td class="num">${thBaht(total)}</td></tr>`);
   return html;
 }
 
