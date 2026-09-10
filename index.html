@@ -289,10 +289,9 @@ const B_HN_NAME= 'Full name / HN (from Patient HN)';
 const B_USED   = 'Used?';
 const B_BUNDLE = 'Item Name';  // ชื่อจาก Bundle Purchased
 
-/* Billing ต้นทาง RELISE Center V.01 (จาก Shared view "รายการจองแก้ไข") */
+/* Billing ต้นทาง RELISE Center V.01 */
 const BOOK_SOURCE_BASE  = 'appESCONcTuzhXlSj';
 const BOOK_SOURCE_TABLE = 'tbl05oOb6j61c77E3';
-const BOOK_SOURCE_VIEW  = 'viwOlzWBa6qDWHhtl';
 const SECRET_TABLE = 'Secret';
 const SECRET_ID_FIELD = 'ID';
 const SECRET_TOKEN_FIELD = 'Token patt';
@@ -328,7 +327,7 @@ const BOOK_SOURCE_FIELDS = [
 const BOOKING_EDIT_FIELDS = [
   { field: SB_ANSWER, key: 'answer', label: 'Answer', type: 'textarea', wide: true },
   { field: SB_DATE, key: 'date', label: 'วันที่', type: 'date' },
-  { field: SB_STATUS, key: 'status', label: 'Billing Status', type: 'text' },
+  { field: SB_TYPE, key: 'billing_type', label: 'Billing Type', type: 'text' },
   { field: SB_CUSTOMER, key: 'customer', label: 'ชื่อลูกค้า จากฟอร์มแอดมิน', type: 'text' },
   { field: SB_PHONE, key: 'phone', label: 'เบอร์โทร', type: 'text' },
   { field: SB_DEPOSIT, key: 'deposit', label: 'Deposit Added', type: 'number' },
@@ -354,7 +353,7 @@ const PAY_OK = new Set(['รูดบัตร/ผ่อน (SCB)','ผ่อน
 
 /* ====== รายงานและสิทธิ์ ====== */
 const REPORTS = {
-  bookings: { name: 'รายการจองทั้งหมด',    roles: ['Admin'] },
+  bookings: { name: 'รายการจองและ Walk-in', roles: ['Admin'] },
   chat:   { name: 'ค่าคอมแชท',            roles: ['Admin'] },
   pa:     { name: 'ค่าคอมยอดขาย (PA)',    roles: ['PA'] },
   sale:   { name: 'ค่าคอมยอดขาย (Sale)',  roles: ['Sale'] },
@@ -649,8 +648,7 @@ async function fetchSourceBookingPages(fields, asDisplayText){
   do {
     const params = new URLSearchParams();
     params.set('pageSize', '100');
-    params.set('view', BOOK_SOURCE_VIEW);
-    params.set('filterByFormula', `{${SB_TYPE}} = 'จอง'`);
+    params.set('filterByFormula', `OR({${SB_TYPE}} = 'จอง', {${SB_TYPE}} = 'Walk-in')`);
     if (asDisplayText){
       params.set('cellFormat', 'string');
       params.set('timeZone', 'Asia/Bangkok');
@@ -779,7 +777,7 @@ async function reportBookings(){
     records = await fetchTable(BILL_TABLE,
       [B_BILLNO, B_DATE, B_TYPE, B_STATUS, B_BUNDLE, B_HN, B_HN_NAME,
        B_PAY, B_FINAL, B_SALECOM, B_USED, B_SALE],
-      `{${B_TYPE}} = 'จอง'`);
+      `OR({${B_TYPE}} = 'จอง', {${B_TYPE}} = 'Walk-in')`);
   }
 
   const bookings = records.map(rec => {
@@ -791,7 +789,7 @@ async function reportBookings(){
       source,
       billNo: cellText(f[source ? SB_BILLNO : B_BILLNO]),
       day: String(f[source ? SB_DATE : B_DATE] || '').slice(0, 10),
-      billStatus: cellText(f[source ? SB_STATUS : B_STATUS]) || '-',
+      billingType: cellText(f[source ? SB_TYPE : B_TYPE]) || '-',
       used: f[source ? SB_USED : B_USED],
       answer: source ? cellText(f[SB_ANSWER]) : '',
       bundle: source
@@ -828,10 +826,13 @@ async function reportBookings(){
       ? answerPreview.slice(0, 44) + '…'
       : answerPreview;
     return `<tr data-booking-row data-bill="${esc(b.billNo.toLowerCase())}" data-used="${status.cls}">
-      <td><b>${esc(b.billNo || '(ไม่มีเลขบิล)')}</b></td>
+      <td><button type="button" class="edit-btn" data-id="${esc(b.id)}"
+        onclick="openBookingEditor(this.dataset.id)" ${sourceReady ? '' : 'disabled'}
+        title="${sourceReady ? 'แก้ไขข้อมูลในหน้าเว็บ' : 'เชื่อม Billing ก่อน'}">แก้ไข</button></td>
+      <td><b>${esc(b.billNo || '(ไม่มีเลขบิล)')}</b>
+        <div style="margin-top:5px"><span class="statuschip ${status.cls}">${status.label}</span></div></td>
       <td>${b.day ? thDate(b.day) : '-'}</td>
-      <td>${esc(b.billStatus)}</td>
-      <td><span class="statuschip ${status.cls}">${status.label}</span></td>
+      <td>${esc(b.billingType)}</td>
       <td class="answer-cell">
         ${answerPreview ? `<div class="answer-value">${esc(shortAnswer)}</div>
           <div class="answer-buttons">
@@ -849,11 +850,6 @@ async function reportBookings(){
       <td class="num">${thBaht(b.deposit)}</td>
       <td>${b.procedureDate ? thDate(b.procedureDate) : '-'}</td>
       <td><div class="slip-list">${b.slips.map(slipThumbHtml).join('') || '-'}</div></td>
-      <td><div style="display:flex;gap:6px">
-        <button type="button" class="edit-btn" data-id="${esc(b.id)}"
-          onclick="openBookingEditor(this.dataset.id)" ${sourceReady ? '' : 'disabled'}
-          title="${sourceReady ? 'แก้ไขข้อมูลในหน้าเว็บ' : 'เชื่อม Billing ก่อน'}">แก้ไข</button>
-      </div></td>
     </tr>`;
   }).join('');
 
@@ -866,12 +862,12 @@ async function reportBookings(){
   }).join('');
 
   return bookingConnectionCard(sourceReady, sourceError) + bigNum([
-    [bookings.length, 'รายการจองทั้งหมด'],
+    [bookings.length, 'จองและ Walk-in ทั้งหมด'],
     [usedCount, 'ใช้แล้ว'],
     [pendingCount, 'ยังไม่ใช้'],
     [unknownCount, 'ไม่พบสถานะ']
   ]) + `<div class="card">
-    <h2 class="section-title">ค้นหาและแก้ไขบิลจอง</h2>
+    <h2 class="section-title">ค้นหาและแก้ไขรายการ</h2>
     <div class="booking-tools" style="margin-top:12px">
       <div><label for="bookingSearch">ค้นหาเลขบิล</label>
         <input id="bookingSearch" placeholder="เช่น BILL0300-ส3456-44" autocomplete="off"
@@ -885,14 +881,14 @@ async function reportBookings(){
         </select></div>
     </div>
     <div id="bookingVisibleCount" class="booking-count">แสดง ${bookings.length} จาก ${bookings.length} รายการ</div>
-    <div class="booking-help">ค้นหาเลขบิลแล้วกด “แก้ไข” เพื่อปรับ Answer และรายละเอียดการจอง โดยไม่ต้องเปิด Airtable</div>
+    <div class="booking-help">ค้นหาเลขบิลแล้วกด “แก้ไข” เพื่อปรับ Answer, Billing Type และรายละเอียด โดยไม่ต้องเปิด Airtable</div>
   </div>
   <div class="card"><div class="tscroll"><table>
-    <tr><th>Billing ID</th><th>วันที่</th><th>Billing Status</th><th>Used?</th><th>Answer</th>
+    <tr><th>แก้ไข</th><th>Billing ID</th><th>วันที่</th><th>Billing Type</th><th>Answer</th>
       <th>Bundle Purchased</th><th>Patient HN</th><th>ชื่อลูกค้า</th><th>เบอร์โทร</th>
       <th>Payment 1</th><th class="num">Deposit Added</th><th>วันเข้าทำหัตถการ</th>
-      <th>OPD/Recipt upload</th><th>จัดการ</th></tr>
-    <tbody id="bookingTableBody">${rows || `<tr><td colspan="14" style="text-align:center;color:#999">ไม่พบบิลจอง</td></tr>`}</tbody>
+      <th>OPD/Recipt upload</th></tr>
+    <tbody id="bookingTableBody">${rows || `<tr><td colspan="13" style="text-align:center;color:#999">ไม่พบรายการจองหรือ Walk-in</td></tr>`}</tbody>
   </table></div></div>
   <dialog id="bookingEditor" class="booking-editor" oncancel="closeBookingEditor()">
     <div class="editor-head"><h2 id="bookingEditorTitle">แก้ไขรายการจอง</h2>
@@ -1013,7 +1009,7 @@ function openBookingEditor(recordId){
   document.getElementById('bookingEditorTitle').textContent = `แก้ไข ${booking.billNo}`;
   document.getElementById('bookingEditorSummary').innerHTML =
     `<b>Bundle Purchased:</b> ${esc(booking.bundle)} · <b>Patient HN:</b> ${esc(booking.patient)}<br>` +
-    `<b>Payment 1:</b> ${esc(booking.payment)} · <b>Used?:</b> ${esc(bookingStatus(booking.used).label)}`;
+    `<b>Billing Type:</b> ${esc(booking.billingType)} · <b>Used?:</b> ${esc(bookingStatus(booking.used).label)}`;
   BOOKING_EDIT_FIELDS.forEach(def => {
     const input = document.getElementById('bookingEdit_' + def.key);
     const value = cellText(booking.raw?.[def.field]);
@@ -1647,7 +1643,7 @@ async function run(){
       ? REPORTS[key].name
       : REPORTS[key].name + ' — ' + empLabel + ' (' + codes.join(', ') + ')';
     document.getElementById('printRange').textContent = isBookings
-      ? 'บิลจองทุกช่วงวันที่ · สถานะจากฟิลด์ Used?'
+      ? 'Billing Type: จอง และ Walk-in · สถานะจากฟิลด์ Used?'
       : `ช่วงวันที่ ${thDate(start)} – ${thDate(end)}`;
     document.getElementById('result').innerHTML = html;
   } catch (e){
