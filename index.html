@@ -87,11 +87,21 @@
   .booking-count { color: #555; font-size: 13px; margin-top: 10px; }
   .booking-help { color: #555; font-size: 13px; line-height: 1.55; margin-top: 10px; }
   .connected { color: #15803d; font-weight: 600; }
-  .answer-cell { min-width: 180px; max-width: 300px; white-space: normal; }
-  .answer-value { white-space: pre-wrap; overflow-wrap: anywhere; }
-  button.copy-answer {
-    margin-top: 7px; min-height: 30px; padding: 5px 9px;
+  .answer-cell { min-width: 170px; max-width: 220px; white-space: normal; }
+  .answer-value {
+    max-width: 200px; overflow: hidden; color: #64748b; font-size: 12px;
+    line-height: 1.4; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .answer-buttons { display: flex; gap: 5px; margin-top: 5px; }
+  button.answer-action {
+    min-height: 28px; padding: 4px 9px;
     background: #edf2ff; color: #1d4ed8; font-size: 12px; font-weight: 600;
+  }
+  button.read-answer { background: #e8f5ee; color: #147a45; }
+  .answer-full {
+    min-height: 130px; padding: 14px; border: 1px solid #e2e8f0; border-radius: 10px;
+    background: #f8fafc; color: #1e293b; font-size: 15px; line-height: 1.7;
+    white-space: pre-wrap; overflow-wrap: anywhere;
   }
   input[type=checkbox] { width: auto; }
   .slip-list { display: flex; flex-wrap: wrap; gap: 6px; min-width: 82px; }
@@ -813,15 +823,23 @@ async function reportBookings(){
 
   const rows = bookings.map(b => {
     const status = bookingStatus(b.used);
+    const answerPreview = String(b.answer || '').replace(/\s+/g, ' ').trim();
+    const shortAnswer = answerPreview.length > 44
+      ? answerPreview.slice(0, 44) + '…'
+      : answerPreview;
     return `<tr data-booking-row data-bill="${esc(b.billNo.toLowerCase())}" data-used="${status.cls}">
       <td><b>${esc(b.billNo || '(ไม่มีเลขบิล)')}</b></td>
       <td>${b.day ? thDate(b.day) : '-'}</td>
       <td>${esc(b.billStatus)}</td>
       <td><span class="statuschip ${status.cls}">${status.label}</span></td>
       <td class="answer-cell">
-        <div class="answer-value">${esc(b.answer || '-')}</div>
-        <button type="button" class="copy-answer" data-id="${esc(b.id)}"
-          onclick="copyBookingAnswer(this.dataset.id)" ${b.answer ? '' : 'disabled'}>คัดลอก Answer</button>
+        ${answerPreview ? `<div class="answer-value">${esc(shortAnswer)}</div>
+          <div class="answer-buttons">
+            <button type="button" class="answer-action read-answer" data-id="${esc(b.id)}"
+              onclick="openAnswerViewer(this.dataset.id)" title="อ่าน Answer ทั้งหมด">🔍 อ่าน</button>
+            <button type="button" class="answer-action" data-id="${esc(b.id)}"
+              onclick="copyBookingAnswer(this.dataset.id)" title="คัดลอก Answer ทั้งหมด">คัดลอก</button>
+          </div>` : '—'}
       </td>
       <td>${esc(b.bundle)}</td>
       <td>${esc(b.patient)}</td>
@@ -835,8 +853,6 @@ async function reportBookings(){
         <button type="button" class="edit-btn" data-id="${esc(b.id)}"
           onclick="openBookingEditor(this.dataset.id)" ${sourceReady ? '' : 'disabled'}
           title="${sourceReady ? 'แก้ไขข้อมูลในหน้าเว็บ' : 'เชื่อม Billing ก่อน'}">แก้ไข</button>
-        <button type="button" data-id="${esc(b.id)}" onclick="addBookingToCalendar(this.dataset.id)"
-          ${sourceReady && b.procedureDate ? '' : 'disabled'} title="${b.procedureDate ? 'เพิ่มวันเข้าทำหัตถการลงปฏิทิน' : 'ยังไม่มีวันเข้าทำหัตถการ'}">เพิ่มลงปฏิทิน</button>
       </div></td>
     </tr>`;
   }).join('');
@@ -900,6 +916,16 @@ async function reportBookings(){
       <button type="button" onclick="closeBookingEditor()">ยกเลิก</button>
       <button type="button" id="bookingSaveButton" class="primary" onclick="saveBookingEdit()">บันทึกข้อมูล</button>
     </div>
+  </dialog>
+  <dialog id="answerViewer" class="booking-editor" oncancel="closeAnswerViewer()">
+    <div class="editor-head">
+      <h2 id="answerViewerTitle">Answer</h2>
+      <div id="answerViewerSummary" class="editor-summary"></div>
+    </div>
+    <div class="editor-body"><div id="answerViewerText" class="answer-full" tabindex="0"></div></div>
+    <div class="editor-actions">
+      <button type="button" class="primary" onclick="closeAnswerViewer()">ปิด</button>
+    </div>
   </dialog>`;
 }
 
@@ -955,6 +981,23 @@ async function copyBookingAnswer(recordId){
   } catch (e){
     alert('คัดลอกไม่สำเร็จ กรุณาเลือกข้อความและคัดลอกด้วยตนเอง');
   }
+}
+
+function openAnswerViewer(recordId){
+  const booking = bookingEditorRecords.get(recordId);
+  if (!booking?.answer){
+    alert('รายการนี้ยังไม่มี Answer');
+    return;
+  }
+  document.getElementById('answerViewerTitle').textContent = `Answer — ${booking.billNo || 'รายการจอง'}`;
+  document.getElementById('answerViewerSummary').textContent = booking.patient || '';
+  document.getElementById('answerViewerText').textContent = booking.answer;
+  document.getElementById('answerViewer').showModal();
+}
+
+function closeAnswerViewer(){
+  const dialog = document.getElementById('answerViewer');
+  if (dialog?.open) dialog.close();
 }
 
 async function refreshBookingSource(){
@@ -1049,45 +1092,6 @@ async function saveBookingEdit(){
       'บันทึกไม่สำเร็จ: ' + e.message;
     button.disabled = false;
   }
-}
-
-function calendarDate(day, addDays = 0){
-  const date = new Date(day + 'T00:00:00');
-  date.setDate(date.getDate() + addDays);
-  return date.getFullYear() + String(date.getMonth() + 1).padStart(2, '0') +
-    String(date.getDate()).padStart(2, '0');
-}
-
-function calendarText(value){
-  return String(value || '').replace(/\\/g, '\\\\').replace(/\n/g, '\\n')
-    .replace(/,/g, '\\,').replace(/;/g, '\\;');
-}
-
-function addBookingToCalendar(recordId){
-  const booking = bookingEditorRecords.get(recordId);
-  if (!booking?.procedureDate){ alert('รายการนี้ยังไม่มีวันเข้าทำหัตถการ'); return; }
-  const title = `Relise Clinic — ${booking.bundle}`;
-  const details = `เลขบิล: ${booking.billNo}\nPatient HN: ${booking.patient}\nลูกค้า: ${booking.customer}\nเบอร์โทร: ${booking.phone}`;
-  const ics = [
-    'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Relise Clinic//Booking//TH',
-    'CALSCALE:GREGORIAN', 'BEGIN:VEVENT',
-    `UID:${calendarText(recordId)}@relise-clinic`,
-    `DTSTAMP:${calendarDate(new Date().toISOString().slice(0, 10))}T000000Z`,
-    `DTSTART;VALUE=DATE:${calendarDate(booking.procedureDate)}`,
-    `DTEND;VALUE=DATE:${calendarDate(booking.procedureDate, 1)}`,
-    `SUMMARY:${calendarText(title)}`,
-    `DESCRIPTION:${calendarText(details)}`,
-    'END:VEVENT', 'END:VCALENDAR'
-  ].join('\r\n');
-  const url = URL.createObjectURL(new Blob([ics], { type: 'text/calendar;charset=utf-8' }));
-  const link = document.createElement('a');
-  link.href = url;
-  const safeBill = String(booking.billNo || recordId).replace(/[\\/:*?"<>|]+/g, '-');
-  link.download = `Relise-${safeBill}.ics`;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 /* ============================================================
