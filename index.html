@@ -35,6 +35,8 @@
   button.primary { background: #2563eb; color: #fff; font-weight: 600; }
   button.ghost { background: transparent; color: #2563eb; }
   button.danger { background: transparent; color: #c0392b; }
+  button.edit-btn { background: #e0eaff; color: #1d4ed8; font-weight: 600; min-height: 34px; padding: 7px 11px; }
+  button:disabled { cursor: not-allowed; opacity: .55; }
   #loginStatus, #status { font-size: 13px; margin-top: 10px; min-height: 18px; color: #666; }
   .err { color: #c0392b !important; }
 
@@ -78,6 +80,51 @@
   .statuschip.pending { background: #fef3c7; color: #a16207; }
   .statuschip.unknown { background: #e5e7eb; color: #4b5563; }
   .section-title { font-size: 17px; margin: 0 0 4px; }
+  .booking-tools {
+    display: grid; grid-template-columns: minmax(240px, 1fr) minmax(160px, 220px);
+    gap: 12px; align-items: end;
+  }
+  .booking-count { color: #555; font-size: 13px; margin-top: 10px; }
+  .booking-help { color: #555; font-size: 13px; line-height: 1.55; margin-top: 10px; }
+  .connected { color: #15803d; font-weight: 600; }
+  .answer-cell { min-width: 180px; max-width: 300px; white-space: normal; }
+  .answer-value { white-space: pre-wrap; overflow-wrap: anywhere; }
+  button.copy-answer {
+    margin-top: 7px; min-height: 30px; padding: 5px 9px;
+    background: #edf2ff; color: #1d4ed8; font-size: 12px; font-weight: 600;
+  }
+  input[type=checkbox] { width: auto; }
+  .slip-list { display: flex; flex-wrap: wrap; gap: 6px; min-width: 82px; }
+  .slip-thumb {
+    display: flex; width: 54px; height: 54px; align-items: center; justify-content: center;
+    border: 1px solid #d8dde5; border-radius: 8px; overflow: hidden; background: #f8fafc;
+    color: #2563eb; font-size: 12px; text-decoration: none;
+  }
+  .slip-thumb img { width: 100%; height: 100%; object-fit: cover; }
+  .attachment-editor { margin-top: 18px; padding-top: 16px; border-top: 1px solid #e5e7eb; }
+  .attachment-list { display: grid; gap: 8px; margin: 8px 0 14px; }
+  .attachment-item {
+    display: grid; grid-template-columns: 58px minmax(0, 1fr) auto; gap: 10px;
+    align-items: center; padding: 8px; border: 1px solid #e5e7eb; border-radius: 9px;
+  }
+  .attachment-name { overflow-wrap: anywhere; font-size: 13px; }
+  .check-label { display: flex; gap: 7px; align-items: center; color: #555; font-size: 13px; }
+  .danger-check { color: #b42318; }
+  dialog.booking-editor {
+    width: min(760px, calc(100% - 24px)); max-height: calc(100vh - 30px);
+    border: 0; border-radius: 14px; padding: 0; box-shadow: 0 24px 70px rgba(0,0,0,.28);
+  }
+  dialog.booking-editor::backdrop { background: rgba(15, 23, 42, .55); }
+  .editor-head { padding: 18px 20px 12px; border-bottom: 1px solid #e5e7eb; }
+  .editor-head h2 { margin: 0; font-size: 19px; }
+  .editor-summary { color: #555; font-size: 13px; line-height: 1.55; margin-top: 6px; }
+  .editor-body { padding: 18px 20px; overflow-y: auto; }
+  .edit-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .edit-grid .wide { grid-column: 1 / -1; }
+  .edit-grid textarea { width: 100%; min-height: 94px; resize: vertical; padding: 10px 11px;
+    border: 1px solid #ccc; border-radius: 8px; font: inherit; }
+  .editor-actions { display: flex; justify-content: flex-end; gap: 10px; padding: 12px 20px 18px; }
+  .editor-message { min-height: 20px; font-size: 13px; margin-top: 12px; }
 
   .bignum { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 4px; }
   .bignum .box {
@@ -110,6 +157,11 @@
     .bignum .box .v { font-size: 18px; }
 
     .userbar { align-items: flex-start; }
+    .booking-tools { grid-template-columns: 1fr; }
+    .edit-grid { grid-template-columns: 1fr; }
+    .edit-grid .wide { grid-column: auto; }
+    .attachment-item { grid-template-columns: 52px minmax(0, 1fr); }
+    .attachment-item .check-label { grid-column: 1 / -1; }
     table { font-size: 13px; }
     th, td { padding: 6px 7px; }
   }
@@ -156,7 +208,7 @@
       <div class="row">
         <div style="flex:1; min-width:180px">
           <label>รายงาน</label>
-          <select id="reportSel"></select>
+          <select id="reportSel" onchange="syncReportControls()"></select>
         </div>
         <div id="empPickWrap" style="flex:1; min-width:180px; display:none">
           <label>พนักงาน (Emp code — เลือกหรือพิมพ์เอง)</label>
@@ -165,10 +217,10 @@
         </div>
       </div>
       <div class="row" style="margin-top:12px">
-        <div><label>เริ่ม</label><input type="date" id="start"></div>
-        <div><label>สิ้นสุด</label><input type="date" id="end"></div>
-        <button class="ghost" onclick="setMonth(0)">เดือนนี้</button>
-        <button class="ghost" onclick="setMonth(-1)">เดือนที่แล้ว</button>
+        <div class="date-control"><label>เริ่ม</label><input type="date" id="start"></div>
+        <div class="date-control"><label>สิ้นสุด</label><input type="date" id="end"></div>
+        <button class="ghost date-control" onclick="setMonth(0)">เดือนนี้</button>
+        <button class="ghost date-control" onclick="setMonth(-1)">เดือนที่แล้ว</button>
         <button class="primary" onclick="run()">แสดงรายงาน</button>
         <button onclick="window.print()">🖨 พิมพ์ / Save PDF</button>
       </div>
@@ -223,8 +275,60 @@ const B_SALECOM= 'ยอดคำนวนค่าคอมเซลล์';
 const B_SALE   = 'Sale';
 const B_PAY    = 'Payment 1';
 const B_HN     = 'Patient HN';
+const B_HN_NAME= 'Full name / HN (from Patient HN)';
 const B_USED   = 'Used?';
 const B_BUNDLE = 'Item Name';  // ชื่อจาก Bundle Purchased
+
+/* Billing ต้นทาง RELISE Center V.01 (จาก Shared view "รายการจองแก้ไข") */
+const BOOK_SOURCE_BASE  = 'appESCONcTuzhXlSj';
+const BOOK_SOURCE_TABLE = 'tbl05oOb6j61c77E3';
+const BOOK_SOURCE_VIEW  = 'viwOlzWBa6qDWHhtl';
+const SECRET_TABLE = 'Secret';
+const SECRET_ID_FIELD = 'ID';
+const SECRET_TOKEN_FIELD = 'Token patt';
+const SB_BILLNO = 'Billing ID (Formula)';
+const SB_DATE = 'วันที่';
+const SB_TYPE = 'Billing Type';
+const SB_STATUS = 'Billing Status';
+const SB_BUNDLE = 'Bundle Purchased';
+const SB_HN = 'Patient HN';
+const SB_CUSTOMER = 'ชื่อลูกค้า จากฟอร์มแอดมิน';
+const SB_PHONE = 'เบอร์โทร';
+const SB_PAYMENT = 'Payment 1';
+const SB_DEPOSIT = 'Deposit Added';
+const SB_CASE = 'ประเภทเคส';
+const SB_CHANNEL = 'ช่องทาง';
+const SB_SOCIAL = 'ชื่อโซเชียล';
+const SB_OTHER_CHANNEL = 'ช่องทางอื่นๆ';
+const SB_PROCEDURE_DATE = 'วันเข้าทำหัตถการ';
+const SB_PROMOTION = 'ส่งเสริมการขาย';
+const SB_FREE_BUNDLE = 'Bundle ของแถม';
+const SB_USED = 'Used?';
+const SB_ANSWER = 'answer';
+const SB_RECEIPT = 'OPD/Recipt upload';
+const SB_RECEIPT_FIELD_ID = 'fldi7LYZGLQSLpIbM';
+const MAX_SLIP_BYTES = 5 * 1024 * 1024;
+
+const BOOK_SOURCE_FIELDS = [
+  SB_BILLNO, SB_DATE, SB_TYPE, SB_STATUS, SB_BUNDLE, SB_HN,
+  SB_CUSTOMER, SB_PHONE, SB_PAYMENT, SB_DEPOSIT, SB_CASE, SB_CHANNEL,
+  SB_SOCIAL, SB_OTHER_CHANNEL, SB_PROCEDURE_DATE, SB_PROMOTION,
+  SB_FREE_BUNDLE, SB_USED, SB_ANSWER, SB_RECEIPT
+];
+const BOOKING_EDIT_FIELDS = [
+  { field: SB_ANSWER, key: 'answer', label: 'Answer', type: 'textarea', wide: true },
+  { field: SB_DATE, key: 'date', label: 'วันที่', type: 'date' },
+  { field: SB_STATUS, key: 'status', label: 'Billing Status', type: 'text' },
+  { field: SB_CUSTOMER, key: 'customer', label: 'ชื่อลูกค้า จากฟอร์มแอดมิน', type: 'text' },
+  { field: SB_PHONE, key: 'phone', label: 'เบอร์โทร', type: 'text' },
+  { field: SB_DEPOSIT, key: 'deposit', label: 'Deposit Added', type: 'number' },
+  { field: SB_CASE, key: 'case', label: 'ประเภทเคส', type: 'text' },
+  { field: SB_CHANNEL, key: 'channel', label: 'ช่องทาง', type: 'text' },
+  { field: SB_SOCIAL, key: 'social', label: 'ชื่อโซเชียล', type: 'text' },
+  { field: SB_OTHER_CHANNEL, key: 'other_channel', label: 'ช่องทางอื่นๆ', type: 'text' },
+  { field: SB_PROCEDURE_DATE, key: 'procedure_date', label: 'วันเข้าทำหัตถการ', type: 'date' },
+  { field: SB_FREE_BUNDLE, key: 'free_bundle', label: 'Bundle ของแถม', type: 'text' }
+];
 
 /* ตาราง Shiff */
 const SHIFF_TABLE = 'Shiff';
@@ -240,6 +344,7 @@ const PAY_OK = new Set(['รูดบัตร/ผ่อน (SCB)','ผ่อน
 
 /* ====== รายงานและสิทธิ์ ====== */
 const REPORTS = {
+  bookings: { name: 'รายการจองทั้งหมด',    roles: ['Admin'] },
   chat:   { name: 'ค่าคอมแชท',            roles: ['Admin'] },
   pa:     { name: 'ค่าคอมยอดขาย (PA)',    roles: ['PA'] },
   sale:   { name: 'ค่าคอมยอดขาย (Sale)',  roles: ['Sale'] },
@@ -313,7 +418,15 @@ function indexBilling(records){
     const f = rec.fields;
     const billNo = cellText(f[B_BILLNO]);
     if (!billNo) continue;
-    const info = { used: f[B_USED], bundle: cellText(f[B_BUNDLE]) };
+    const info = {
+      used: f[B_USED],
+      bundle: cellText(f[B_BUNDLE]),
+      sale: cellText(f[B_SALE]),
+      day: String(f[B_DATE] || '').slice(0, 10),
+      type: cellText(f[B_TYPE]),
+      hn: cellText(f[B_HN]),
+      sales: parseMoney(f[B_SALECOM] ?? f[B_FINAL])
+    };
     byBill.set(billNo, info);
     byBill.set(billPrefix(billNo), info);
   }
@@ -406,6 +519,9 @@ async function login(){
 }
 
 function logout(){
+  bookingSourceToken = '';
+  sourceBookingCache = null;
+  bookingEditorRecords.clear();
   sessionStorage.removeItem('relise_user');
   document.getElementById('reportView').style.display = 'none';
   document.getElementById('loginView').style.display = '';
@@ -430,9 +546,20 @@ async function showReport(){
     .map(k => `<option value="${k}">${REPORTS[k].name}</option>`).join('');
 
   if (isManager(u)){
-    document.getElementById('empPickWrap').style.display = '';
     loadEmpList().catch(() => {});
   }
+  syncReportControls();
+}
+
+function syncReportControls(){
+  const u = session();
+  if (!u) return;
+  const isBookings = document.getElementById('reportSel').value === 'bookings';
+  document.querySelectorAll('.date-control').forEach(el => {
+    el.style.display = isBookings ? 'none' : '';
+  });
+  document.getElementById('empPickWrap').style.display =
+    isManager(u) && !isBookings ? '' : 'none';
 }
 
 /* รายชื่อพนักงานสำหรับ Mgn/Dev */
@@ -468,6 +595,502 @@ function setMonth(offset){
 }
 
 /* ============================================================
+   รายการจองทั้งหมด — ค้นหาและแก้ไข Billing ต้นทางในหน้าเว็บ
+   ============================================================ */
+let bookingSourceToken = '';
+let sourceBookingCache = null;
+let bookingEditorRecords = new Map();
+
+async function loadBookingSourceToken(){
+  if (bookingSourceToken) return bookingSourceToken;
+  const params = 'maxRecords=1' +
+    '&fields[]=' + encodeURIComponent(SECRET_TOKEN_FIELD) +
+    '&filterByFormula=' + encodeURIComponent(`{${SECRET_ID_FIELD}} = 2`);
+  const data = await api(SECRET_TABLE, params);
+  const token = cellText(data.records?.[0]?.fields?.[SECRET_TOKEN_FIELD]);
+  if (!token) throw new Error('ไม่พบ Token patt ใน Secret ID 2');
+  bookingSourceToken = token;
+  return token;
+}
+
+async function sourceAirtableRequest(query, options = {}){
+  if (!bookingSourceToken) throw new Error('กรุณาเชื่อมสิทธิ์แก้ไข Airtable ก่อน');
+  const url = `https://api.airtable.com/v0/${BOOK_SOURCE_BASE}/${BOOK_SOURCE_TABLE}${query || ''}`;
+  const res = await fetch(url, {
+    ...options,
+    headers: {
+      Authorization: 'Bearer ' + bookingSourceToken,
+      'Content-Type': 'application/json',
+      ...(options.headers || {})
+    }
+  });
+  let data = {};
+  try { data = await res.json(); } catch(e) {}
+  if (!res.ok){
+    const message = data?.error?.message || data?.error?.type || `Airtable error ${res.status}`;
+    throw new Error(message);
+  }
+  return data;
+}
+
+async function fetchSourceBookingPages(fields, asDisplayText){
+  const records = [];
+  let offset = '';
+  do {
+    const params = new URLSearchParams();
+    params.set('pageSize', '100');
+    params.set('view', BOOK_SOURCE_VIEW);
+    params.set('filterByFormula', `{${SB_TYPE}} = 'จอง'`);
+    if (asDisplayText){
+      params.set('cellFormat', 'string');
+      params.set('timeZone', 'Asia/Bangkok');
+      params.set('userLocale', 'th');
+    }
+    fields.forEach(field => params.append('fields[]', field));
+    if (offset) params.set('offset', offset);
+    const data = await sourceAirtableRequest('?' + params.toString());
+    records.push(...data.records);
+    offset = data.offset || '';
+  } while (offset);
+  return records;
+}
+
+async function fetchSourceBookings(){
+  if (sourceBookingCache) return sourceBookingCache;
+  const rawRecords = await fetchSourceBookingPages(BOOK_SOURCE_FIELDS, false);
+  const displayRecords = await fetchSourceBookingPages(
+    [SB_BILLNO, SB_BUNDLE, SB_HN, SB_PAYMENT, SB_PROMOTION], true);
+  const displayById = new Map(displayRecords.map(rec => [rec.id, rec.fields]));
+  sourceBookingCache = rawRecords.map(rec => ({
+    ...rec,
+    displayFields: displayById.get(rec.id) || {}
+  }));
+  return sourceBookingCache;
+}
+
+async function updateSourceBooking(recordId, fields){
+  return sourceAirtableRequest('', {
+    method: 'PATCH',
+    body: JSON.stringify({ records: [{ id: recordId, fields }] })
+  });
+}
+
+function safeAttachmentUrl(value){
+  try {
+    const url = new URL(String(value || ''));
+    return url.protocol === 'https:' || url.protocol === 'http:' ? url.href : '';
+  } catch (e){ return ''; }
+}
+
+function slipThumbHtml(attachment){
+  const href = safeAttachmentUrl(attachment?.url);
+  if (!href) return '';
+  const preview = safeAttachmentUrl(attachment?.thumbnails?.small?.url || attachment?.thumbnails?.large?.url);
+  const name = attachment?.filename || 'เปิดสลิป';
+  return `<a class="slip-thumb" href="${esc(href)}" target="_blank" rel="noopener"
+    title="${esc(name)}">${preview ? `<img src="${esc(preview)}" alt="${esc(name)}">` : 'ไฟล์'}</a>`;
+}
+
+function existingSlipsHtml(attachments){
+  if (!attachments.length) return '<div class="note">ยังไม่มีไฟล์แนบ</div>';
+  return attachments.map(attachment => `<div class="attachment-item">
+    ${slipThumbHtml(attachment)}
+    <div class="attachment-name"><a href="${esc(safeAttachmentUrl(attachment.url))}"
+      target="_blank" rel="noopener">${esc(attachment.filename || 'เปิดไฟล์')}</a>
+      <div class="note">${attachment.size ? Math.ceil(attachment.size / 1024).toLocaleString('th-TH') + ' KB' : ''}</div></div>
+    <label class="check-label danger-check"><input type="checkbox" data-remove-slip="${esc(attachment.id)}"> ลบไฟล์นี้</label>
+  </div>`).join('');
+}
+
+function fileToBase64(file){
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || '').split(',')[1] || '');
+    reader.onerror = () => reject(new Error(`อ่านไฟล์ ${file.name} ไม่สำเร็จ`));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function uploadSourceSlip(recordId, file){
+  if (file.size > MAX_SLIP_BYTES) throw new Error(`${file.name} มีขนาดเกิน 5 MB`);
+  const encoded = await fileToBase64(file);
+  const res = await fetch(
+    `https://content.airtable.com/v0/${BOOK_SOURCE_BASE}/${recordId}/${SB_RECEIPT_FIELD_ID}/uploadAttachment`,
+    {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + bookingSourceToken, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ contentType: file.type || 'application/octet-stream', file: encoded, filename: file.name })
+    });
+  let data = {};
+  try { data = await res.json(); } catch(e) {}
+  if (!res.ok) throw new Error(data?.error?.message || data?.error?.type || `อัปโหลดไม่สำเร็จ (${res.status})`);
+  return data;
+}
+
+async function getSourceSlips(recordId){
+  const query = `/${encodeURIComponent(recordId)}?fields%5B%5D=${encodeURIComponent(SB_RECEIPT)}`;
+  const data = await sourceAirtableRequest(query);
+  return Array.isArray(data.fields?.[SB_RECEIPT]) ? data.fields[SB_RECEIPT] : [];
+}
+
+function slipsToKeep(currentSlips, originalSlips, removeIds, replaceSlips){
+  if (replaceSlips){
+    const originalIds = new Set(originalSlips.map(item => item.id));
+    return currentSlips.filter(item => !originalIds.has(item.id));
+  }
+  return currentSlips.filter(item => !removeIds.has(item.id));
+}
+
+function bookingConnectionCard(connected, errorMessage){
+  if (connected){
+    return `<div class="card"><div class="row" style="justify-content:space-between;align-items:center">
+      <div><span class="connected">● เชื่อมต่อ Billing — RELISE Center V.01 แล้ว</span>
+        <div class="note">ใช้สิทธิ์จาก Secret ID 2 · แก้ไขและบันทึกข้อมูลได้จากปุ่ม “แก้ไข”</div></div>
+      <button type="button" onclick="refreshBookingSource()">รีเฟรชข้อมูล</button>
+    </div></div>`;
+  }
+  return `<div class="card">
+    <h2 class="section-title">เชื่อมต่อ Billing ไม่สำเร็จ</h2>
+    <div class="err booking-help">${esc(errorMessage || 'ไม่สามารถอ่าน Secret ID 2 ได้')}</div>
+    <button type="button" style="margin-top:12px" onclick="refreshBookingSource()">ลองใหม่</button>
+  </div>`;
+}
+
+async function reportBookings(){
+  let records, sourceReady = false, sourceError = '';
+  try {
+    await loadBookingSourceToken();
+    records = await fetchSourceBookings();
+    sourceReady = true;
+  } catch (e){
+    sourceError = e.message;
+  }
+  if (!sourceReady){
+    records = await fetchTable(BILL_TABLE,
+      [B_BILLNO, B_DATE, B_TYPE, B_STATUS, B_BUNDLE, B_HN, B_HN_NAME,
+       B_PAY, B_FINAL, B_SALECOM, B_USED, B_SALE],
+      `{${B_TYPE}} = 'จอง'`);
+  }
+
+  const bookings = records.map(rec => {
+    const f = rec.fields;
+    const display = rec.displayFields || {};
+    const source = sourceReady;
+    return {
+      id: rec.id,
+      source,
+      billNo: cellText(f[source ? SB_BILLNO : B_BILLNO]),
+      day: String(f[source ? SB_DATE : B_DATE] || '').slice(0, 10),
+      billStatus: cellText(f[source ? SB_STATUS : B_STATUS]) || '-',
+      used: f[source ? SB_USED : B_USED],
+      answer: source ? cellText(f[SB_ANSWER]) : '',
+      bundle: source
+        ? cellText(display[SB_BUNDLE]) || cellText(f[SB_BUNDLE]) || '-'
+        : cellText(f[B_BUNDLE]) || '-',
+      patient: source
+        ? cellText(display[SB_HN]) || cellText(f[SB_HN]) || '-'
+        : cellText(f[B_HN_NAME]) || cellText(f[B_HN]) || '-',
+      customer: source ? cellText(f[SB_CUSTOMER]) || '-' : '-',
+      phone: source ? cellText(f[SB_PHONE]) || '-' : '-',
+      payment: source
+        ? cellText(display[SB_PAYMENT]) || cellText(f[SB_PAYMENT]) || '-'
+        : cellText(f[B_PAY]) || '-',
+      procedureDate: source ? String(f[SB_PROCEDURE_DATE] || '').slice(0, 10) : '',
+      slips: source && Array.isArray(f[SB_RECEIPT]) ? f[SB_RECEIPT] : [],
+      deposit: source
+        ? parseMoney(f[SB_DEPOSIT])
+        : parseMoney(f[B_SALECOM] ?? f[B_FINAL]),
+      raw: source ? f : null
+    };
+  }).sort((a, b) => (b.day || '').localeCompare(a.day || '') ||
+                    a.billNo.localeCompare(b.billNo));
+
+  bookingEditorRecords = new Map(bookings.filter(b => b.source).map(b => [b.id, b]));
+
+  const usedCount = bookings.filter(b => bookingStatus(b.used).cls === 'used').length;
+  const pendingCount = bookings.filter(b => bookingStatus(b.used).cls === 'pending').length;
+  const unknownCount = bookings.length - usedCount - pendingCount;
+
+  const rows = bookings.map(b => {
+    const status = bookingStatus(b.used);
+    return `<tr data-booking-row data-bill="${esc(b.billNo.toLowerCase())}" data-used="${status.cls}">
+      <td><b>${esc(b.billNo || '(ไม่มีเลขบิล)')}</b></td>
+      <td>${b.day ? thDate(b.day) : '-'}</td>
+      <td>${esc(b.billStatus)}</td>
+      <td><span class="statuschip ${status.cls}">${status.label}</span></td>
+      <td class="answer-cell">
+        <div class="answer-value">${esc(b.answer || '-')}</div>
+        <button type="button" class="copy-answer" data-id="${esc(b.id)}"
+          onclick="copyBookingAnswer(this.dataset.id)" ${b.answer ? '' : 'disabled'}>คัดลอก Answer</button>
+      </td>
+      <td>${esc(b.bundle)}</td>
+      <td>${esc(b.patient)}</td>
+      <td>${esc(b.customer)}</td>
+      <td>${esc(b.phone)}</td>
+      <td>${esc(b.payment)}</td>
+      <td class="num">${thBaht(b.deposit)}</td>
+      <td>${b.procedureDate ? thDate(b.procedureDate) : '-'}</td>
+      <td><div class="slip-list">${b.slips.map(slipThumbHtml).join('') || '-'}</div></td>
+      <td><div style="display:flex;gap:6px">
+        <button type="button" class="edit-btn" data-id="${esc(b.id)}"
+          onclick="openBookingEditor(this.dataset.id)" ${sourceReady ? '' : 'disabled'}
+          title="${sourceReady ? 'แก้ไขข้อมูลในหน้าเว็บ' : 'เชื่อม Billing ก่อน'}">แก้ไข</button>
+        <button type="button" data-id="${esc(b.id)}" onclick="addBookingToCalendar(this.dataset.id)"
+          ${sourceReady && b.procedureDate ? '' : 'disabled'} title="${b.procedureDate ? 'เพิ่มวันเข้าทำหัตถการลงปฏิทิน' : 'ยังไม่มีวันเข้าทำหัตถการ'}">เพิ่มลงปฏิทิน</button>
+      </div></td>
+    </tr>`;
+  }).join('');
+
+  const editorFields = BOOKING_EDIT_FIELDS.map(def => {
+    const attrs = def.type === 'number' ? 'type="number" step="0.01"' : `type="${def.type}"`;
+    const control = def.type === 'textarea'
+      ? `<textarea id="bookingEdit_${def.key}"></textarea>`
+      : `<input id="bookingEdit_${def.key}" ${attrs} autocomplete="off">`;
+    return `<div class="${def.wide ? 'wide' : ''}"><label for="bookingEdit_${def.key}">${esc(def.label)}</label>${control}</div>`;
+  }).join('');
+
+  return bookingConnectionCard(sourceReady, sourceError) + bigNum([
+    [bookings.length, 'รายการจองทั้งหมด'],
+    [usedCount, 'ใช้แล้ว'],
+    [pendingCount, 'ยังไม่ใช้'],
+    [unknownCount, 'ไม่พบสถานะ']
+  ]) + `<div class="card">
+    <h2 class="section-title">ค้นหาและแก้ไขบิลจอง</h2>
+    <div class="booking-tools" style="margin-top:12px">
+      <div><label for="bookingSearch">ค้นหาเลขบิล</label>
+        <input id="bookingSearch" placeholder="เช่น BILL0300-ส3456-44" autocomplete="off"
+          oninput="filterBookingRows()"></div>
+      <div><label for="bookingUsedFilter">สถานะ Used?</label>
+        <select id="bookingUsedFilter" onchange="filterBookingRows()">
+          <option value="all">ทั้งหมด</option>
+          <option value="used">ใช้แล้ว</option>
+          <option value="pending">ยังไม่ใช้</option>
+          <option value="unknown">ไม่พบสถานะ</option>
+        </select></div>
+    </div>
+    <div id="bookingVisibleCount" class="booking-count">แสดง ${bookings.length} จาก ${bookings.length} รายการ</div>
+    <div class="booking-help">ค้นหาเลขบิลแล้วกด “แก้ไข” เพื่อปรับ Answer และรายละเอียดการจอง โดยไม่ต้องเปิด Airtable</div>
+  </div>
+  <div class="card"><div class="tscroll"><table>
+    <tr><th>Billing ID</th><th>วันที่</th><th>Billing Status</th><th>Used?</th><th>Answer</th>
+      <th>Bundle Purchased</th><th>Patient HN</th><th>ชื่อลูกค้า</th><th>เบอร์โทร</th>
+      <th>Payment 1</th><th class="num">Deposit Added</th><th>วันเข้าทำหัตถการ</th>
+      <th>OPD/Recipt upload</th><th>จัดการ</th></tr>
+    <tbody id="bookingTableBody">${rows || `<tr><td colspan="14" style="text-align:center;color:#999">ไม่พบบิลจอง</td></tr>`}</tbody>
+  </table></div></div>
+  <dialog id="bookingEditor" class="booking-editor" oncancel="closeBookingEditor()">
+    <div class="editor-head"><h2 id="bookingEditorTitle">แก้ไขรายการจอง</h2>
+      <div id="bookingEditorSummary" class="editor-summary"></div></div>
+    <div class="editor-body">
+      <input id="bookingEditRecordId" type="hidden">
+      <div class="edit-grid">${editorFields}</div>
+      <div class="attachment-editor">
+        <label>OPD/Recipt upload</label>
+        <div id="bookingExistingSlips" class="attachment-list"></div>
+        <label for="bookingSlipFiles">แนบสลิปใหม่</label>
+        <input id="bookingSlipFiles" type="file" accept="image/*,application/pdf" multiple>
+        <label class="check-label danger-check" style="margin-top:10px">
+          <input id="bookingReplaceSlips" type="checkbox"> แทนที่สลิปเดิมทั้งหมดด้วยไฟล์ใหม่
+        </label>
+        <div class="note">รองรับรูปภาพและ PDF ขนาดไม่เกิน 5 MB ต่อไฟล์ · หากไม่เลือก “แทนที่” ไฟล์ใหม่จะถูกเพิ่มต่อจากไฟล์เดิม</div>
+      </div>
+      <div id="bookingEditorMessage" class="editor-message"></div>
+    </div>
+    <div class="editor-actions">
+      <button type="button" onclick="closeBookingEditor()">ยกเลิก</button>
+      <button type="button" id="bookingSaveButton" class="primary" onclick="saveBookingEdit()">บันทึกข้อมูล</button>
+    </div>
+  </dialog>`;
+}
+
+function filterBookingRows(){
+  const search = document.getElementById('bookingSearch');
+  const filter = document.getElementById('bookingUsedFilter');
+  if (!search || !filter) return;
+  const query = search.value.trim().toLowerCase();
+  let shown = 0, total = 0;
+  document.querySelectorAll('[data-booking-row]').forEach(row => {
+    total++;
+    const matchesBill = !query || row.dataset.bill.includes(query);
+    const matchesUsed = filter.value === 'all' || row.dataset.used === filter.value;
+    const visible = matchesBill && matchesUsed;
+    row.style.display = visible ? '' : 'none';
+    if (visible) shown++;
+  });
+  const count = document.getElementById('bookingVisibleCount');
+  if (count) count.textContent = `แสดง ${shown} จาก ${total} รายการ`;
+}
+
+function fallbackCopyText(text){
+  const area = document.createElement('textarea');
+  area.value = text;
+  area.setAttribute('readonly', '');
+  area.style.position = 'fixed';
+  area.style.opacity = '0';
+  document.body.appendChild(area);
+  area.select();
+  const copied = document.execCommand('copy');
+  area.remove();
+  if (!copied) throw new Error('ไม่สามารถเข้าถึงคลิปบอร์ดได้');
+}
+
+async function copyBookingAnswer(recordId){
+  const booking = bookingEditorRecords.get(recordId);
+  const answer = booking?.answer || '';
+  if (!answer){
+    alert('รายการนี้ยังไม่มี Answer');
+    return;
+  }
+  try {
+    if (navigator.clipboard && window.isSecureContext){
+      await navigator.clipboard.writeText(answer);
+    } else {
+      fallbackCopyText(answer);
+    }
+    const status = document.getElementById('status');
+    if (status){
+      status.className = '';
+      status.textContent = `คัดลอก Answer ของ ${booking.billNo || 'รายการจอง'} แล้ว`;
+    }
+  } catch (e){
+    alert('คัดลอกไม่สำเร็จ กรุณาเลือกข้อความและคัดลอกด้วยตนเอง');
+  }
+}
+
+async function refreshBookingSource(){
+  sourceBookingCache = null;
+  bookingEditorRecords.clear();
+  await run();
+}
+
+function openBookingEditor(recordId){
+  const booking = bookingEditorRecords.get(recordId);
+  if (!booking) return;
+  document.getElementById('bookingEditRecordId').value = recordId;
+  document.getElementById('bookingEditorTitle').textContent = `แก้ไข ${booking.billNo}`;
+  document.getElementById('bookingEditorSummary').innerHTML =
+    `<b>Bundle Purchased:</b> ${esc(booking.bundle)} · <b>Patient HN:</b> ${esc(booking.patient)}<br>` +
+    `<b>Payment 1:</b> ${esc(booking.payment)} · <b>Used?:</b> ${esc(bookingStatus(booking.used).label)}`;
+  BOOKING_EDIT_FIELDS.forEach(def => {
+    const input = document.getElementById('bookingEdit_' + def.key);
+    const value = cellText(booking.raw?.[def.field]);
+    input.value = def.type === 'date' ? value.slice(0, 10) : value;
+  });
+  document.getElementById('bookingExistingSlips').innerHTML = existingSlipsHtml(booking.slips);
+  document.getElementById('bookingSlipFiles').value = '';
+  document.getElementById('bookingReplaceSlips').checked = false;
+  const message = document.getElementById('bookingEditorMessage');
+  message.className = 'editor-message';
+  message.textContent = '';
+  document.getElementById('bookingSaveButton').disabled = false;
+  document.getElementById('bookingEditor').showModal();
+}
+
+function closeBookingEditor(){
+  const dialog = document.getElementById('bookingEditor');
+  if (dialog?.open) dialog.close();
+}
+
+async function saveBookingEdit(){
+  const recordId = document.getElementById('bookingEditRecordId').value;
+  const booking = bookingEditorRecords.get(recordId);
+  const message = document.getElementById('bookingEditorMessage');
+  const button = document.getElementById('bookingSaveButton');
+  if (!recordId || !booking) return;
+  const fields = {};
+  BOOKING_EDIT_FIELDS.forEach(def => {
+    const value = document.getElementById('bookingEdit_' + def.key).value.trim();
+    fields[def.field] = value === '' ? null : (def.type === 'number' ? parseMoney(value) : value);
+  });
+  const files = [...document.getElementById('bookingSlipFiles').files];
+  const replaceSlips = document.getElementById('bookingReplaceSlips').checked;
+  const removeIds = new Set([...document.querySelectorAll('[data-remove-slip]:checked')]
+    .map(input => input.dataset.removeSlip));
+  if (replaceSlips && !files.length){
+    message.className = 'editor-message err';
+    message.textContent = 'กรุณาเลือกสลิปใหม่ก่อนใช้คำสั่งแทนที่';
+    return;
+  }
+  const oversized = files.find(file => file.size > MAX_SLIP_BYTES);
+  if (oversized){
+    message.className = 'editor-message err';
+    message.textContent = `${oversized.name} มีขนาดเกิน 5 MB`;
+    return;
+  }
+  button.disabled = true;
+  message.className = 'editor-message';
+  message.textContent = 'กำลังบันทึก...';
+  let uploadedCount = 0;
+  try {
+    await updateSourceBooking(recordId, fields);
+    for (const file of files){
+      message.textContent = `กำลังอัปโหลดสลิป ${uploadedCount + 1} จาก ${files.length}...`;
+      await uploadSourceSlip(recordId, file);
+      uploadedCount++;
+    }
+    if (replaceSlips || removeIds.size){
+      const currentSlips = files.length ? await getSourceSlips(recordId) : booking.slips;
+      const keptSlips = slipsToKeep(currentSlips, booking.slips, removeIds, replaceSlips);
+      if (replaceSlips && !keptSlips.length) throw new Error('อัปโหลดสลิปใหม่ไม่สำเร็จ จึงยังไม่ได้ลบสลิปเดิม');
+      await updateSourceBooking(recordId, {
+        [SB_RECEIPT]: keptSlips.map(item => ({ id: item.id }))
+      });
+    }
+    sourceBookingCache = null;
+    closeBookingEditor();
+    await run();
+    const st = document.getElementById('status');
+    st.className = '';
+    st.textContent = 'บันทึกข้อมูลเรียบร้อยแล้ว';
+  } catch (e){
+    if (uploadedCount) sourceBookingCache = null;
+    message.className = 'editor-message err';
+    message.textContent = (uploadedCount ? `อัปโหลดแล้ว ${uploadedCount} ไฟล์ แต่` : '') +
+      'บันทึกไม่สำเร็จ: ' + e.message;
+    button.disabled = false;
+  }
+}
+
+function calendarDate(day, addDays = 0){
+  const date = new Date(day + 'T00:00:00');
+  date.setDate(date.getDate() + addDays);
+  return date.getFullYear() + String(date.getMonth() + 1).padStart(2, '0') +
+    String(date.getDate()).padStart(2, '0');
+}
+
+function calendarText(value){
+  return String(value || '').replace(/\\/g, '\\\\').replace(/\n/g, '\\n')
+    .replace(/,/g, '\\,').replace(/;/g, '\\;');
+}
+
+function addBookingToCalendar(recordId){
+  const booking = bookingEditorRecords.get(recordId);
+  if (!booking?.procedureDate){ alert('รายการนี้ยังไม่มีวันเข้าทำหัตถการ'); return; }
+  const title = `Relise Clinic — ${booking.bundle}`;
+  const details = `เลขบิล: ${booking.billNo}\nPatient HN: ${booking.patient}\nลูกค้า: ${booking.customer}\nเบอร์โทร: ${booking.phone}`;
+  const ics = [
+    'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Relise Clinic//Booking//TH',
+    'CALSCALE:GREGORIAN', 'BEGIN:VEVENT',
+    `UID:${calendarText(recordId)}@relise-clinic`,
+    `DTSTAMP:${calendarDate(new Date().toISOString().slice(0, 10))}T000000Z`,
+    `DTSTART;VALUE=DATE:${calendarDate(booking.procedureDate)}`,
+    `DTEND;VALUE=DATE:${calendarDate(booking.procedureDate, 1)}`,
+    `SUMMARY:${calendarText(title)}`,
+    `DESCRIPTION:${calendarText(details)}`,
+    'END:VEVENT', 'END:VCALENDAR'
+  ].join('\r\n');
+  const url = URL.createObjectURL(new Blob([ics], { type: 'text/calendar;charset=utf-8' }));
+  const link = document.createElement('a');
+  link.href = url;
+  const safeBill = String(booking.billNo || recordId).replace(/[\\/:*?"<>|]+/g, '-');
+  link.download = `Relise-${safeBill}.ics`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/* ============================================================
    รายงาน 1: ค่าคอมแชท (Admin) — ตรรกะเดิมทุกข้อ
    ============================================================ */
 async function reportChat(codes, start, end){
@@ -498,9 +1121,27 @@ async function reportChat(codes, start, end){
       bundle: billingInfo.bundle,
       adminN: Number(f[F_ADMIN_N]) || 0,
       admins: parseAdmins(f[F_ADMINS]),
+      saleOwners: parseAdmins(billingInfo.sale),
       depRef: dep ? billPrefix(dep) : null
     };
   }).filter(it => it.day);
+
+  // บิลจองที่ยังไม่มีแถวในตารางค่ามือ ให้นำมาคิดจาก Billing โดยตรง
+  const benefitPrefixes = new Set(items.map(it => it.prefix).filter(Boolean));
+  for (const rec of billingRecords){
+    const f = rec.fields;
+    const type = cellText(f[B_TYPE]);
+    const billNo = cellText(f[B_BILLNO]);
+    const prefix = billPrefix(billNo);
+    if (type !== 'จอง' || !billNo || benefitPrefixes.has(prefix)) continue;
+    const info = billingByBill.get(billNo) || billingByBill.get(prefix) || {};
+    items.push({
+      billNo, prefix, hn: info.hn || extractHN(billNo), day: info.day,
+      sales: info.sales, zeroSale: false, booking: true,
+      used: info.used, bundle: info.bundle, adminN: 0, admins: [],
+      saleOwners: parseAdmins(info.sale), depRef: null
+    });
+  }
 
   const parent = items.map((_, i) => i);
   function find(i){ while (parent[i] !== i){ parent[i] = parent[parent[i]]; i = parent[i]; } return i; }
@@ -525,16 +1166,28 @@ async function reportChat(codes, start, end){
     groups.get(root).push(it);
   });
 
-  const bills = [], bookings = [];
+  // รายการจองดึงจาก Billing โดยตรง เพื่อให้ครบทั้งใช้แล้วและยังไม่ใช้
+  const bookings = billingRecords.map(rec => rec.fields).filter(f => {
+    const day = String(f[B_DATE] || '').slice(0, 10);
+    return cellText(f[B_TYPE]) === 'จอง' && day >= start && day <= end &&
+      matchCode(cellText(f[B_SALE]), codes);
+  }).map(f => ({
+    billNo: cellText(f[B_BILLNO]),
+    hn: cellText(f[B_HN]) || extractHN(cellText(f[B_BILLNO])),
+    day: String(f[B_DATE] || '').slice(0, 10),
+    sales: parseMoney(f[B_SALECOM] ?? f[B_FINAL]),
+    used: f[B_USED], bundle: cellText(f[B_BUNDLE])
+  }));
+
+  const bills = [];
   for (const list of groups.values()){
     const allAdmins = new Set();
     list.forEach(it => it.admins.forEach(a => allAdmins.add(a)));
-    if (![...allAdmins].some(a => matchCode(a, codes))) continue;
-
-    // แยกรายการจองตามวันของบิลจอง เพื่อให้ยังเห็นบิลที่ถูกนำไปใช้ในวันหลัง
-    for (const it of list){
-      if (it.booking && it.day >= start && it.day <= end) bookings.push(it);
+    // บิลจองยังไม่ใช้จะยังไม่มี Admin Commission จึงใช้ Sale เป็นผู้รับผิดชอบสำรอง
+    if (!allAdmins.size){
+      list.forEach(it => it.saleOwners.forEach(a => allAdmins.add(a)));
     }
+    if (![...allAdmins].some(a => matchCode(a, codes))) continue;
 
     const day = list.map(it => it.day).sort().pop();
     if (day < start || day > end) continue;
@@ -563,7 +1216,7 @@ async function reportChat(codes, start, end){
   ]);
 
   if (!bills.length){
-    html += `<div class="card warn">ไม่พบบิลที่ฟิลด์ Admin Commission มีรหัส "${esc(codes.join(', '))}"
+    html += `<div class="card warn">ไม่พบบิลที่ฟิลด์ Admin Commission หรือ Sale มีรหัส "${esc(codes.join(', '))}"
       ในช่วงวันที่ที่เลือก — เช็คว่า Emp Code ในตาราง Liff test ตรงกับที่ใช้ในบิล (เช่น 68015)
       และช่วงวันที่ถูกต้อง</div>`;
   }
@@ -947,7 +1600,14 @@ function groupByDay(bills){
 }
 
 /* ====== RUN ====== */
-const RUNNERS = { chat: reportChat, pa: reportPA, sale: reportSale, bt: reportBT, doctor: reportDoctor };
+const RUNNERS = {
+  bookings: reportBookings,
+  chat: reportChat,
+  pa: reportPA,
+  sale: reportSale,
+  bt: reportBT,
+  doctor: reportDoctor
+};
 
 async function run(){
   const u = session();
@@ -958,11 +1618,12 @@ async function run(){
   const start = document.getElementById('start').value;
   const end = document.getElementById('end').value;
   const st = document.getElementById('status');
-  if (!start || !end){ alert('กรุณาเลือกวันที่เริ่มและสิ้นสุด'); return; }
+  const isBookings = key === 'bookings';
+  if (!isBookings && (!start || !end)){ alert('กรุณาเลือกวันที่เริ่มและสิ้นสุด'); return; }
 
   // Mgn/Dev เลือกพนักงานได้ / คนอื่นดูของตัวเองเท่านั้น
   let codes = u.codes, empLabel = u.name;
-  if (isManager(u)){
+  if (isManager(u) && !isBookings){
     const picked = document.getElementById('empPick').value.trim();
     if (picked){
       const code = resolveEmp(picked);
@@ -978,10 +1639,12 @@ async function run(){
   try {
     const html = await RUNNERS[key](codes, start, end);
     st.textContent = 'คำนวณเสร็จแล้ว';
-    document.getElementById('printTitle').textContent =
-      REPORTS[key].name + ' — ' + empLabel + ' (' + codes.join(', ') + ')';
-    document.getElementById('printRange').textContent =
-      `ช่วงวันที่ ${thDate(start)} – ${thDate(end)}`;
+    document.getElementById('printTitle').textContent = isBookings
+      ? REPORTS[key].name
+      : REPORTS[key].name + ' — ' + empLabel + ' (' + codes.join(', ') + ')';
+    document.getElementById('printRange').textContent = isBookings
+      ? 'บิลจองทุกช่วงวันที่ · สถานะจากฟิลด์ Used?'
+      : `ช่วงวันที่ ${thDate(start)} – ${thDate(end)}`;
     document.getElementById('result').innerHTML = html;
   } catch (e){
     st.className = 'err'; st.textContent = '❌ ' + e.message;
