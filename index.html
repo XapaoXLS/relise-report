@@ -325,7 +325,6 @@ const BOOK_SOURCE_FIELDS = [
   SB_FREE_BUNDLE, SB_USED, SB_ANSWER, SB_RECEIPT
 ];
 const BOOKING_EDIT_FIELDS = [
-  { field: SB_ANSWER, key: 'answer', label: 'Answer', type: 'textarea', wide: true },
   { field: SB_DATE, key: 'date', label: 'วันที่', type: 'date' },
   { field: SB_TYPE, key: 'billing_type', label: 'Billing Type', type: 'text' },
   { field: SB_CUSTOMER, key: 'customer', label: 'ชื่อลูกค้า จากฟอร์มแอดมิน', type: 'text' },
@@ -881,7 +880,7 @@ async function reportBookings(){
         </select></div>
     </div>
     <div id="bookingVisibleCount" class="booking-count">แสดง ${bookings.length} จาก ${bookings.length} รายการ</div>
-    <div class="booking-help">ค้นหาเลขบิลแล้วกด “แก้ไข” เพื่อปรับ Answer, Billing Type และรายละเอียด โดยไม่ต้องเปิด Airtable</div>
+    <div class="booking-help">ค้นหาเลขบิลแล้วกด “แก้ไข” เพื่อปรับ Billing Type และรายละเอียด โดยไม่ต้องเปิด Airtable · Answer เป็นฟิลด์สูตร จึงอ่านและคัดลอกได้เท่านั้น</div>
   </div>
   <div class="card"><div class="tscroll"><table>
     <tr><th>แก้ไข</th><th>Billing ID</th><th>วันที่</th><th>Billing Type</th><th>Answer</th>
