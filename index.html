@@ -233,6 +233,7 @@
         <button class="ghost date-control" onclick="setMonth(-1)">เดือนที่แล้ว</button>
         <button class="primary" onclick="run()">แสดงรายงาน</button>
         <button onclick="window.print()">🖨 พิมพ์ / Save PDF</button>
+        <button id="excelButton" onclick="exportReportExcel()" disabled>ส่งออก Excel</button>
       </div>
       <div id="status"></div>
     </div>
@@ -535,6 +536,7 @@ function logout(){
   document.getElementById('loginView').style.display = '';
   document.getElementById('loginPass').value = '';
   document.getElementById('result').innerHTML = '';
+  document.getElementById('excelButton').disabled = true;
 }
 
 async function showReport(){
@@ -568,6 +570,7 @@ function syncReportControls(){
   });
   document.getElementById('empPickWrap').style.display =
     isManager(u) && !isBookings ? '' : 'none';
+  document.getElementById('excelButton').disabled = true;
 }
 
 /* รายชื่อพนักงานสำหรับ Mgn/Dev */
@@ -1103,7 +1106,7 @@ async function reportChat(codes, start, end){
   // สถานะจองและชื่อ Bundle ยึดข้อมูลจากตาราง Billing โดยตรง
   const billingByBill = indexBilling(billingRecords);
 
-  const items = records.map(rec => {
+  let items = records.map(rec => {
     const f = rec.fields;
     const billNo = f[F_BILLNO] || '';
     const dep = String(f[F_DEPOSIT] || '').trim();
@@ -1125,14 +1128,18 @@ async function reportChat(codes, start, end){
     };
   }).filter(it => it.day);
 
-  // บิลจองที่ยังไม่มีแถวในตารางค่ามือ ให้นำมาคิดจาก Billing โดยตรง
+  // แสดงบิลมัดจำเฉพาะรายการที่ถูกอ้างอิงใน Deposit Used ของบิลอื่นแล้ว
+  const usedDepositPrefixes = new Set(items.map(it => it.depRef).filter(Boolean));
+  items = items.filter(it => !it.booking || usedDepositPrefixes.has(it.prefix));
+
+  // เติมข้อมูลบิลมัดจำที่ถูกใช้แล้ว แต่ยังไม่มีแถวในตารางค่ามือ จาก Billing โดยตรง
   const benefitPrefixes = new Set(items.map(it => it.prefix).filter(Boolean));
   for (const rec of billingRecords){
     const f = rec.fields;
     const type = cellText(f[B_TYPE]);
     const billNo = cellText(f[B_BILLNO]);
     const prefix = billPrefix(billNo);
-    if (type !== 'จอง' || !billNo || benefitPrefixes.has(prefix)) continue;
+    if (type !== 'จอง' || !billNo || !usedDepositPrefixes.has(prefix) || benefitPrefixes.has(prefix)) continue;
     const info = billingByBill.get(billNo) || billingByBill.get(prefix) || {};
     items.push({
       billNo, prefix, hn: info.hn || extractHN(billNo), day: info.day,
@@ -1165,21 +1172,12 @@ async function reportChat(codes, start, end){
     groups.get(root).push(it);
   });
 
-  // รายการจองดึงจาก Billing โดยตรง เพื่อให้ครบทั้งใช้แล้วและยังไม่ใช้
-  const bookings = billingRecords.map(rec => rec.fields).filter(f => {
-    const day = String(f[B_DATE] || '').slice(0, 10);
-    return cellText(f[B_TYPE]) === 'จอง' && day >= start && day <= end &&
-      matchCode(cellText(f[B_SALE]), codes);
-  }).map(f => ({
-    billNo: cellText(f[B_BILLNO]),
-    hn: cellText(f[B_HN]) || extractHN(cellText(f[B_BILLNO])),
-    day: String(f[B_DATE] || '').slice(0, 10),
-    sales: parseMoney(f[B_SALECOM] ?? f[B_FINAL]),
-    used: f[B_USED], bundle: cellText(f[B_BUNDLE])
-  }));
-
   const bills = [];
   for (const list of groups.values()){
+    // บิลมัดจำเดี่ยวไม่มีสิทธิ์ค่าคอม ต้องมีบิลซื้อที่มียอดขายอยู่ในกลุ่มเดียวกัน
+    const hasPurchaseBill = list.some(it => !it.booking && !it.zeroSale && it.sales > 0);
+    if (!hasPurchaseBill) continue;
+
     const allAdmins = new Set();
     list.forEach(it => it.admins.forEach(a => allAdmins.add(a)));
     // บิลจองยังไม่ใช้จะยังไม่มี Admin Commission จึงใช้ Sale เป็นผู้รับผิดชอบสำรอง
@@ -1196,7 +1194,7 @@ async function reportChat(codes, start, end){
     const rate = rateChat(sales);
     const depPrefixes = new Set(list.map(it => it.depRef).filter(Boolean));
     const billNos = list.map(it => ({
-      no: it.billNo, dep: depPrefixes.has(it.prefix), zero: it.zeroSale,
+      no: it.billNo, prefix: it.prefix, dep: depPrefixes.has(it.prefix), zero: it.zeroSale,
       booking: it.booking, used: it.used, bundle: it.bundle
     }));
     const missing = [...depPrefixes].filter(p => !byPrefix.has(p));
@@ -1204,6 +1202,22 @@ async function reportChat(codes, start, end){
                || list[0].billNo;
     bills.push({ hn, day, billNos, missing, sales, rate, n, com: rate / n });
   }
+
+  // ใช้เฉพาะมัดจำที่อยู่ในกลุ่มค่าคอมซึ่งมีบิลซื้อแนบมาด้วยจริง
+  const shownDepositPrefixes = new Set();
+  bills.forEach(b => b.billNos.forEach(x => {
+    if (x.dep && x.prefix) shownDepositPrefixes.add(x.prefix);
+  }));
+  const bookings = billingRecords.map(rec => rec.fields).filter(f => {
+    const prefix = billPrefix(cellText(f[B_BILLNO]));
+    return cellText(f[B_TYPE]) === 'จอง' && shownDepositPrefixes.has(prefix);
+  }).map(f => ({
+    billNo: cellText(f[B_BILLNO]),
+    hn: cellText(f[B_HN]) || extractHN(cellText(f[B_BILLNO])),
+    day: String(f[B_DATE] || '').slice(0, 10),
+    sales: parseMoney(f[B_SALECOM] ?? f[B_FINAL]),
+    used: f[B_USED], bundle: cellText(f[B_BUNDLE])
+  }));
 
   const totalCom = bills.reduce((s, b) => s + b.com, 0);
   const totalSales = bills.reduce((s, b) => s + b.sales, 0);
@@ -1264,11 +1278,11 @@ async function reportChat(codes, start, end){
         <td class="num">${thBaht(b.sales)}</td>
         <td><span class="statuschip ${status.cls}">${status.label}</span></td></tr>`;
     }).join('');
-  html += `<div class="card"><h2 class="section-title">รายการจองทั้งหมดในช่วงวันที่</h2>
-    <div class="note">สถานะอ้างอิงจากฟิลด์ Used? ใน Billing · รวม ${bookings.length} รายการ · ใช้แล้ว ${usedBookingCount} · ยังไม่เข้ามาใช้ ${pendingBookingCount}${unknownBookingCount ? ` · ไม่พบสถานะ ${unknownBookingCount}` : ''}</div>
+  html += `<div class="card"><h2 class="section-title">มัดจำที่ถูกใช้ในบิลแล้ว</h2>
+    <div class="note">อ้างอิงจากฟิลด์ Deposit Used (from Billing) · รวม ${bookings.length} รายการ · Used? ใช้แล้ว ${usedBookingCount}${pendingBookingCount ? ` · สถานะยังไม่อัปเดต ${pendingBookingCount}` : ''}${unknownBookingCount ? ` · ไม่พบสถานะ ${unknownBookingCount}` : ''}</div>
     <div class="tscroll" style="margin-top:10px"><table>
       <tr><th>วันที่จอง</th><th>HN</th><th>เลขบิล</th><th>ชื่อ Bundle Purchased</th><th class="num">ยอดจอง</th><th>สถานะ</th></tr>
-      ${bookingRows || `<tr><td colspan="6" style="text-align:center;color:#999">ไม่มีรายการจองในช่วงที่เลือก</td></tr>`}
+      ${bookingRows || `<tr><td colspan="6" style="text-align:center;color:#999">ไม่มีมัดจำที่ถูกใช้ในช่วงที่เลือก</td></tr>`}
     </table></div></div>`;
   return html;
 }
@@ -1578,6 +1592,258 @@ async function reportDoctor(codes, start, end){
   return html;
 }
 
+/* ====== EXPORT EXCEL (.xlsx ไม่ต้องใช้อินเทอร์เน็ต) ====== */
+function excelXml(value){
+  return String(value ?? '')
+    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '')
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&apos;');
+}
+
+function excelCellText(cell){
+  if (cell.classList.contains('answer-cell')){
+    const id = cell.querySelector('[data-id]')?.dataset.id;
+    const answer = id ? bookingEditorRecords.get(id)?.answer : '';
+    if (answer) return answer;
+  }
+  const copy = cell.cloneNode(true);
+  copy.querySelectorAll('button,input,select,textarea').forEach(el => el.remove());
+  copy.querySelectorAll('a.slip-thumb').forEach(link => {
+    link.replaceWith(document.createTextNode(link.href || ''));
+  });
+  return String(copy.innerText || copy.textContent || '')
+    .replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+function excelNumber(value){
+  const text = String(value || '').replace(/[฿,\s]/g, '');
+  return /^-?\d+(?:\.\d+)?$/.test(text) ? Number(text) : null;
+}
+
+function reportRowsForExcel(){
+  const rows = [];
+  const title = document.getElementById('printTitle').textContent.trim();
+  const range = document.getElementById('printRange').textContent.trim();
+  rows.push([{ value: title || 'รายงาน', style: 1 }]);
+  if (range) rows.push([{ value: range, style: 2 }]);
+  rows.push([]);
+
+  const boxes = [...document.querySelectorAll('#result .bignum .box')];
+  if (boxes.length){
+    rows.push([{ value: 'สรุป', style: 3 }]);
+    boxes.forEach(box => {
+      const label = box.querySelector('.l')?.textContent.trim() || '';
+      const rawValue = box.querySelector('.v')?.textContent.trim() || '';
+      const number = excelNumber(rawValue);
+      rows.push([
+        { value: label },
+        number === null ? { value: rawValue } : { value: number, type: 'n', style: 5 }
+      ]);
+    });
+    rows.push([]);
+  }
+
+  const tables = [...document.querySelectorAll('#result table')];
+  tables.forEach((table, tableIndex) => {
+    const card = table.closest('.card');
+    const heading = card?.querySelector('.section-title')?.textContent.trim() ||
+      (tableIndex ? `ตาราง ${tableIndex + 1}` : 'รายละเอียดรายงาน');
+    rows.push([{ value: heading, style: 3 }]);
+
+    const domRows = [...table.rows].filter(row => row.style.display !== 'none' && !row.hidden);
+    const firstRow = domRows[0];
+    const skippedColumns = new Set();
+    if (firstRow){
+      [...firstRow.cells].forEach((cell, index) => {
+        if (/^(แก้ไข|จัดการ)$/.test(excelCellText(cell))) skippedColumns.add(index);
+      });
+    }
+    domRows.forEach(row => {
+      const isHeader = [...row.cells].some(cell => cell.tagName === 'TH');
+      const isDay = row.classList.contains('daybar');
+      const isTotal = row.classList.contains('total');
+      const out = [];
+      [...row.cells].forEach((cell, index) => {
+        if (skippedColumns.has(index)) return;
+        const value = excelCellText(cell).slice(0, 32767);
+        const numeric = cell.classList.contains('num') ? excelNumber(value) : null;
+        let style = isHeader ? 4 : isDay ? 3 : isTotal ? 6 : 0;
+        if (numeric !== null) style = isTotal ? 7 : 5;
+        out.push(numeric === null
+          ? { value, style }
+          : { value: numeric, type: 'n', style });
+        for (let i = 1; i < (cell.colSpan || 1); i++) out.push({ value: '', style });
+      });
+      rows.push(out);
+    });
+    rows.push([]);
+  });
+  return rows;
+}
+
+function excelColumnName(index){
+  let name = '';
+  for (let n = index + 1; n; n = Math.floor((n - 1) / 26)){
+    name = String.fromCharCode(65 + ((n - 1) % 26)) + name;
+  }
+  return name;
+}
+
+function excelSheetXml(rows){
+  const maxCols = Math.max(1, ...rows.map(row => row.length));
+  const widths = Array(maxCols).fill(10);
+  rows.forEach(row => row.forEach((cell, index) => {
+    const longest = String(cell?.value ?? '').split('\n')
+      .reduce((max, part) => Math.max(max, part.length), 0);
+    widths[index] = Math.min(45, Math.max(widths[index], longest + 2));
+  }));
+  const cols = widths.map((width, index) =>
+    `<col min="${index + 1}" max="${index + 1}" width="${width}" customWidth="1"/>`).join('');
+  const sheetRows = rows.map((row, rowIndex) => {
+    const cells = row.map((cell, colIndex) => {
+      const ref = excelColumnName(colIndex) + (rowIndex + 1);
+      const style = cell?.style ? ` s="${cell.style}"` : '';
+      if (cell?.type === 'n' && Number.isFinite(cell.value)){
+        return `<c r="${ref}"${style}><v>${cell.value}</v></c>`;
+      }
+      return `<c r="${ref}" t="inlineStr"${style}><is><t xml:space="preserve">${excelXml(cell?.value ?? '')}</t></is></c>`;
+    }).join('');
+    return `<row r="${rowIndex + 1}">${cells}</row>`;
+  }).join('');
+  const end = excelColumnName(maxCols - 1) + Math.max(rows.length, 1);
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <dimension ref="A1:${end}"/><sheetViews><sheetView workbookViewId="0"/></sheetViews>
+  <sheetFormatPr defaultRowHeight="18"/><cols>${cols}</cols><sheetData>${sheetRows}</sheetData>
+  <pageMargins left="0.3" right="0.3" top="0.5" bottom="0.5" header="0.2" footer="0.2"/>
+</worksheet>`;
+}
+
+function excelCrc32(bytes){
+  if (!excelCrc32.table){
+    excelCrc32.table = Array.from({ length: 256 }, (_, n) => {
+      let c = n;
+      for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+      return c >>> 0;
+    });
+  }
+  let crc = 0xFFFFFFFF;
+  bytes.forEach(byte => { crc = excelCrc32.table[(crc ^ byte) & 0xFF] ^ (crc >>> 8); });
+  return (crc ^ 0xFFFFFFFF) >>> 0;
+}
+
+function excelU16(value){
+  const bytes = new Uint8Array(2);
+  new DataView(bytes.buffer).setUint16(0, value, true);
+  return bytes;
+}
+
+function excelU32(value){
+  const bytes = new Uint8Array(4);
+  new DataView(bytes.buffer).setUint32(0, value >>> 0, true);
+  return bytes;
+}
+
+function excelJoinBytes(parts){
+  const out = new Uint8Array(parts.reduce((sum, part) => sum + part.length, 0));
+  let offset = 0;
+  parts.forEach(part => { out.set(part, offset); offset += part.length; });
+  return out;
+}
+
+function excelZip(files){
+  const encoder = new TextEncoder();
+  const locals = [], centrals = [];
+  let offset = 0;
+  Object.entries(files).forEach(([filename, content]) => {
+    const name = encoder.encode(filename);
+    const data = typeof content === 'string' ? encoder.encode(content) : content;
+    const crc = excelCrc32(data);
+    const local = excelJoinBytes([
+      excelU32(0x04034B50), excelU16(20), excelU16(0), excelU16(0), excelU16(0), excelU16(0),
+      excelU32(crc), excelU32(data.length), excelU32(data.length), excelU16(name.length), excelU16(0), name, data
+    ]);
+    locals.push(local);
+    centrals.push(excelJoinBytes([
+      excelU32(0x02014B50), excelU16(20), excelU16(20), excelU16(0), excelU16(0), excelU16(0), excelU16(0),
+      excelU32(crc), excelU32(data.length), excelU32(data.length), excelU16(name.length), excelU16(0),
+      excelU16(0), excelU16(0), excelU16(0), excelU32(0), excelU32(offset), name
+    ]));
+    offset += local.length;
+  });
+  const central = excelJoinBytes(centrals);
+  const end = excelJoinBytes([
+    excelU32(0x06054B50), excelU16(0), excelU16(0), excelU16(centrals.length),
+    excelU16(centrals.length), excelU32(central.length), excelU32(offset), excelU16(0)
+  ]);
+  return excelJoinBytes([...locals, central, end]);
+}
+
+function exportReportExcel(){
+  const result = document.getElementById('result');
+  if (!result.querySelector('table')){
+    alert('กรุณากด “แสดงรายงาน” ก่อนส่งออก Excel');
+    return;
+  }
+  try {
+    const rows = reportRowsForExcel();
+    const reportTitle = document.getElementById('printTitle').textContent.trim() || 'รายงาน';
+    const safeSheetName = reportTitle.replace(/[\\\/?*\[\]:]/g, ' ').trim().slice(0, 31) || 'รายงาน';
+    const files = {
+      '[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
+</Types>`,
+      '_rels/.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`,
+      'xl/workbook.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="${excelXml(safeSheetName)}" sheetId="1" r:id="rId1"/></sheets>
+</workbook>`,
+      'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+</Relationships>`,
+      'xl/styles.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <numFmts count="1"><numFmt numFmtId="164" formatCode="#\,##0.00"/></numFmts>
+  <fonts count="4"><font><sz val="11"/><name val="Arial"/></font><font><b/><sz val="16"/><name val="Arial"/></font><font><sz val="10"/><color rgb="FF64748B"/><name val="Arial"/></font><font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Arial"/></font></fonts>
+  <fills count="4"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF2563EB"/><bgColor indexed="64"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFF0F6FF"/><bgColor indexed="64"/></patternFill></fill></fills>
+  <borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border><border><left/><right/><top/><bottom style="thin"><color rgb="FFD9E2EC"/></bottom><diagonal/></border></borders>
+  <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
+  <cellXfs count="8"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="3" borderId="0" xfId="0"/><xf numFmtId="0" fontId="3" fillId="2" borderId="1" xfId="0"><alignment horizontal="center" vertical="center" wrapText="1"/></xf><xf numFmtId="164" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1"><alignment horizontal="right"/></xf><xf numFmtId="0" fontId="1" fillId="3" borderId="1" xfId="0"/><xf numFmtId="164" fontId="1" fillId="3" borderId="1" xfId="0" applyNumberFormat="1"><alignment horizontal="right"/></xf></cellXfs>
+  <cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
+</styleSheet>`,
+      'xl/worksheets/sheet1.xml': excelSheetXml(rows)
+    };
+    const blob = new Blob([excelZip(files)], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    const date = new Date().toISOString().slice(0, 10);
+    const safeFileName = reportTitle.replace(/[\\/:*?"<>|]+/g, '-').trim() || 'รายงาน';
+    link.href = url;
+    link.download = `${safeFileName}-${date}.xlsx`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    const status = document.getElementById('status');
+    status.className = '';
+    status.textContent = 'ส่งออก Excel เรียบร้อยแล้ว';
+  } catch (e){
+    alert('ส่งออก Excel ไม่สำเร็จ: ' + e.message);
+  }
+}
+
 /* ====== RENDER HELPERS ====== */
 function bigNum(pairs){
   return `<div class="card"><div class="bignum">` +
@@ -1635,6 +1901,7 @@ async function run(){
 
   st.className = ''; st.textContent = 'กำลังดึงข้อมูล...';
   document.getElementById('result').innerHTML = '';
+  document.getElementById('excelButton').disabled = true;
   try {
     const html = await RUNNERS[key](codes, start, end);
     st.textContent = 'คำนวณเสร็จแล้ว';
@@ -1645,8 +1912,10 @@ async function run(){
       ? 'Billing Type: จอง และ Walk-in · สถานะจากฟิลด์ Used?'
       : `ช่วงวันที่ ${thDate(start)} – ${thDate(end)}`;
     document.getElementById('result').innerHTML = html;
+    document.getElementById('excelButton').disabled = false;
   } catch (e){
     st.className = 'err'; st.textContent = '❌ ' + e.message;
+    document.getElementById('excelButton').disabled = true;
   }
 }
 
